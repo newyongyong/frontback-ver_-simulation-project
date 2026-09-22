@@ -1,0 +1,37 @@
+{
+  "name": "production-planning-frontend",
+  "private": true,
+  "version": "0.1.0",
+  "main": "electron-main.cjs",
+  "description": "판매·재고 기반 생산계획 자동화 프로그램",
+  "author": "Production Planning Team",
+  "scripts": {
+    "dev": "next dev",
+    "build": "next build",
+    "start": "next start",
+    "lint": "eslint",
+    "desktop:build": "npm run build && electron-builder --win nsis"
+  },
+  "dependencies": {
+    "next": "^16.0.0",
+    "react": "^19.0.0",
+    "react-dom": "^19.0.0"
+  },
+  "devDependencies": {
+    "@types/node": "^22.0.0",
+    "@types/react": "^19.0.0",
+    "@types/react-dom": "^19.0.0",
+    "electron": "^44.4.3",
+    "electron-builder": "^26.15.3",
+    "typescript": "^5.0.0"
+  },
+  "build": {
+    "appId": "com.company.productionplanning",
+    "productName": "생산계획 자동화",
+    "directories": { "output": "../release" },
+    "files": ["electron-main.cjs", ".next/**", "!.next/cache/**", "!.next/dev/**", "!.next/diagnostics/**", "!.next/trace/**", "!.next/trace-build/**", "!.next/turbopack/**", "package.json"],
+    "extraResources": [{ "from": "../backend/dist/ProductionPlanningAPI.exe", "to": "backend/ProductionPlanningAPI.exe" }],
+    "win": { "target": "nsis" },
+    "nsis": { "oneClick": false, "allowToChangeInstallationDirectory": true, "createDesktopShortcut": true }
+  }
+}

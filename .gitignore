@@ -1,0 +1,19 @@
+# Python
+backend/.venv/
+backend/__pycache__/
+backend/**/*.pyc
+backend/build/
+backend/dist/
+
+# SQLite runtime data
+backend/data/*.db
+backend/data/uploads/
+
+# Next.js
+frontend/node_modules/
+frontend/.next/
+
+# Environment files
+.env
+backend/.env
+frontend/.env.local

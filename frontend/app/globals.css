@@ -1,0 +1,224 @@
+* { box-sizing: border-box; }
+
+body {
+  margin: 0;
+  background: #f5f7fb;
+  color: #1b2430;
+  font-family: Arial, "Noto Sans KR", sans-serif;
+}
+
+main { max-width: none; width: 100%; margin: 0; padding: 14px 32px 14px 280px; }
+.app-header { display: flex; justify-content: space-between; align-items: start; padding: 2px 4px 10px; }
+.app-header h1 { font-size: 32px; }
+.eyebrow { margin: 0 0 6px; color: #1769aa; font-size: 12px; font-weight: 700; letter-spacing: .12em; }
+.server-status { padding: 9px 12px; margin: 0; border-radius: 99px; background: #eaf5ee; color: #16733a; font-size: 13px; }
+.planning-sidebar { position: fixed; top: 8px; bottom: 8px; left: 8px; width: 248px; overflow-y: auto; padding: 14px; background: #f8f7fb; border: 1px solid #dedce7; border-radius: 12px; z-index: 3; }
+.company-ci { display:block; width:132px; height:52px; padding:4px; margin:0 0 8px; background:#fff; border:1px solid #d7dee7; border-radius:7px; overflow:hidden; }
+.company-ci:hover { background:#f4f8fb; }.company-ci img { display:block; width:100%; height:100%; object-fit:contain; }
+.planning-sidebar section { padding: 8px 2px 14px; border-bottom: 1px solid #dedce7; }
+.planning-sidebar h2 { margin: 8px 0 10px; font-size: 16px; }
+.planning-selector-header { display:flex; align-items:center; justify-content:space-between; gap:8px; }
+.planning-selector-header h2 { margin-right:auto; }
+.selector-toggle { padding:5px 9px; background:#fff; color:#4b6653; border:1px solid #c7d4c8; font-size:12px; }
+.selector-toggle:hover { background:#edf5ed; }
+.collapsed-range { margin:3px 0 10px; color:#5d6778; font-size:13px; line-height:1.45; }
+.planning-sidebar select { width: 100%; background:white; }
+.month-calendar { display:grid; gap:10px; margin-bottom:10px; }.calendar-year { display:grid; grid-template-columns:34px 1fr 34px; align-items:center; text-align:center; }.calendar-year button { padding:6px; background:#fff; color:#39433c; border:1px solid #ced6cc; }.month-grid { display:grid; grid-template-columns:repeat(3, 1fr); gap:8px; }.month-grid button { padding:9px 3px; color:#39433c; background:#fff; border:1px solid #ced6cc; }.month-grid button.selected-month { background:#5f956d; color:white; border-color:#5f956d; }
+.planning-sidebar label, .muted { color:#8a8793; font-size:13px; }
+.readonly-period { margin:5px 0 12px; padding:9px; background:#f0eef4; color:#77737f; border-radius:6px; font-size:14px; }
+.range-end-picker { width:100%; margin:5px 0 12px; padding:9px; border:1px solid #c8d0dc; border-radius:6px; background:#fff; }
+.range-button { display:block; padding:10px; background:#dceee5; color:#285f49; text-align:center; text-decoration:none; border-radius:7px; }
+.range-confirm-button { width:100%; margin-top:4px; background:#5f956d; }.range-confirm-button:hover { background:#4c7e5a; }
+.requirement-calculate-button { width:100%; margin-top:10px; background:#1769aa; }.requirement-calculate-button:hover { background:#0f5791; }.requirement-calculate-button:disabled { background:#a9bbc9; cursor:not-allowed; }
+.sidebar-error { margin:8px 0 0; color:#bf2424; font-size:12px; line-height:1.45; }
+.planning-sidebar nav { display:grid; gap:8px; padding-top:14px; }
+.planning-sidebar nav a, .planning-sidebar summary { display:block; padding:10px 11px; color:#42404a; text-decoration:none; background:#edf0e5; border:1px solid #d9ddca; border-radius:7px; font-size:17px; cursor:pointer; }
+.planning-sidebar nav details { display:grid; gap:6px; }
+.planning-sidebar nav details > a { margin-left:12px; background:#f8f9f5; font-size:16px; }
+.planning-sidebar nav details details { margin-left:12px; }
+.planning-sidebar nav details details > a { margin-left:10px; }
+.planning-sidebar nav a:hover, .planning-sidebar summary:hover { filter:brightness(.96); }
+.view-dashboard .card:not(.overview), .view-planning .overview, .view-schedule .overview, .view-actual .overview, .view-data .overview { display: none; }
+.planning-not-started > .app-header, .planning-not-started > .card { display:none !important; }
+.planning-start-placeholder { position:fixed; inset:0 0 0 280px; display:grid; place-items:center; color:#4a6780; font-size:42px; font-weight:700; letter-spacing:-.04em; }
+.view-planning .card:nth-of-type(n+3), .view-schedule .card:nth-of-type(n+3) { display: none; }
+.view-monthly .overview, .view-daily .overview { display:none; }
+.view-monthly .card:nth-of-type(n+3), .view-daily .card:nth-of-type(n+3) { display:none; }
+.view-actual .card:not(:nth-of-type(3)) { display: none; }
+.view-data-upload .sales-comparison-card { display:none; }
+.view-data-upload { display:flex; flex-direction:column; }
+.view-data-upload .overview { display:none; }
+.view-data-upload .data-status-card { order:1; }
+.view-data-upload .master-upload-card { order:2; }
+.view-data-upload .sales-card { order:3; }
+.view-data-upload .product-inventory-card { order:5; }
+.view-data-upload .raw-inventory-card { order:6; }
+.view-data-upload .raw-inbound-card { order:7; }
+.view-data-upload .actual-upload-card { order:8; }
+.view-data-upload .product-master-card { order:9; }
+.view-data-upload .upload-form { grid-template-columns:minmax(0, 40%) auto; justify-content:start; }
+.data-status-card td:last-child { white-space:nowrap; }
+.data-status-card td:last-child select { width:180px; min-width:180px; max-width:180px; padding:5px 7px; vertical-align:middle; }
+.data-status-card td:last-child .small-button { width:48px; margin-left:6px; padding:7px 0; vertical-align:middle; }
+.view-data-compare .card:not(.sales-comparison-card):not(.actual-comparison-card) { display:none; }
+.view-production-daily .card:not(.daily-plan-requested):not(.planning-card):not(.schedule-editor-card) { display:none; }
+.view-production-daily { display:flex; flex-direction:column; }
+.view-production-daily .app-header { order:0; }
+.view-production-daily .planning-card { order:1; }
+.view-production-daily .daily-plan-requested { order:2; }
+.view-production-daily .schedule-editor-card { order:3; }
+.view-production-daily .planning-form { grid-template-columns:120px 100px minmax(0, 1fr); }
+.view-production-daily .planning-form button { width:30%; justify-self:start; }
+.view-production-daily .planning-card > .table-wrap:not(:first-of-type),
+.view-production-daily .planning-card > .version-bar,
+.view-production-daily .planning-card > .dashboard,
+.view-production-daily .planning-card > .validation-button,
+.view-production-daily .planning-card > .export-button { display:none; }
+.schedule-editor-header { display:flex; justify-content:space-between; gap:16px; align-items:start; }
+.schedule-editor-header h2 { margin:0; }.schedule-editor-header p { margin:6px 0 0; color:#5d6778; }
+.schedule-editor-actions { display:flex; gap:8px; align-items:center; }.schedule-editor-actions input { min-width:220px; padding:8px; }.schedule-editor-actions button { padding:9px 12px; }.schedule-editor-actions button:nth-last-child(2) { background:#0d7659; }.schedule-editor-actions button:last-child { background:#6d4c9a; }
+.schedule-editor-card { border-color:#cfdccf; }.schedule-editor-table { max-height:520px; border:1px solid #dde3ea; border-radius:8px; }.schedule-editor-table table { min-width:760px; }.schedule-editor-table th { text-align:center; background:#eef4eb; }.schedule-editor-table td { text-align:center; }
+.schedule-editor-table { max-height:620px; }.schedule-editor-table table { min-width:1100px; }.cell-input, .cell-select { width:84px; min-width:0; padding:5px; border:1px solid #cbd6e1; border-radius:4px; background:#fff; font:inherit; text-align:center; }.cell-input.product-input { width:105px; }.cell-select { width:70px; }.cell-input:disabled, .cell-select:disabled { background:#f1f3f5; color:#7d8791; }
+.view-production-monthly .card:not(.planning-card):not(.reference-panel):not(.production-monthly-panel) { display:none; }
+.view-sales-monthly .card:not(.sales-card):not(.reference-panel), .view-sales-daily .card:not(.sales-card):not(.reference-panel) { display:none; }
+.view-product-inventory-monthly .card:not(.product-inventory-card), .view-product-inventory-daily .card:not(.product-inventory-card) { display:none; }
+.view-product-inventory .card:not(.product-inventory-range-panel) { display:none; }
+.view-raw-inventory .card:not(.raw-inventory-panel) { display:none; }
+.view-product-inventory-monthly .product-inventory-card form, .view-product-inventory-daily .product-inventory-card form { display:none; }
+.view-sales-monthly .sales-card, .view-sales-daily .sales-card, .view-production-monthly .planning-card { display:none; }
+.view-production-monthly .reference-panel { display:none; }
+.reference-panel { background:#fbfcf8; border-color:#d4d9d0; }
+.reference-table { max-width:100%; border:1px solid #dfe5dc; border-radius:10px; }
+.reference-table table { width:auto; min-width:520px; }
+.reference-table th, .reference-table td { text-align:center; border:1px solid #e2e8df; }
+.reference-table th { color:#496557; background:#f2f5ed; }
+.reference-table .total-cell { background:#edf5fd; font-weight:700; }
+.monthly-total-row td { background:#edf5fd; font-weight:700; border-top:2px solid #bfd2e5; }
+.plant-picker { display:grid; gap:6px; max-width:100%; margin-bottom:18px; font-size:13px; }.plant-picker select { padding:9px; border:0; border-radius:6px; background:#f1f7ed; }
+.view-production-monthly .plant-picker { max-width:30%; }
+.reference-tabs { display:flex; gap:12px; margin:14px 0; }.reference-tabs button { flex:1; background:#5e956c; }.reference-tabs button:disabled { background:#fbfcf8; color:#b7b7af; border:1px solid #d0d5cc; }
+.inventory-layout { display:grid; grid-template-columns:130px minmax(0,1fr); gap:18px; }.inventory-layout aside { display:grid; align-content:start; gap:10px; padding:14px; border:1px solid #d5d9ce; border-radius:8px; }.inventory-layout aside label { font-size:13px; }.product-inventory-panel .reference-table table { min-width:900px; }
+.view-raw-inventory-monthly .card:not(.raw-inventory-card), .view-raw-inventory-daily .card:not(.raw-inventory-card) { display:none; }
+.view-raw-inventory-inbound .card:not(.raw-inbound-card) { display:none; }
+.view-spec-monthly .card:not(.spec-reference-panel), .view-spec-daily .card:not(.spec-reference-panel) { display:none; }
+.view-spec-monthly .spec-filter-card, .view-spec-daily .spec-filter-card { display:block !important; }
+.view-spec-monthly .spec-filter-card .daily-filters label:nth-child(n+2), .view-spec-daily .spec-filter-card .daily-filters label:nth-child(n+2) { display:none; }
+.view-spec-monthly .spec-layout, .view-spec-daily .spec-layout { grid-template-columns:minmax(0, 1fr); }
+.view-spec-monthly .spec-layout > aside, .view-spec-daily .spec-layout > aside,
+.view-spec-monthly .reference-tabs, .view-spec-daily .reference-tabs { display:none; }
+.view-sales-monthly .sales-card form, .view-sales-daily .sales-card form,
+.view-product-inventory-monthly .product-inventory-card form, .view-product-inventory-daily .product-inventory-card form,
+.view-raw-inventory-monthly .raw-inventory-card form, .view-raw-inventory-daily .raw-inventory-card form,
+.view-raw-inventory-inbound .raw-inbound-card form { display:none; }
+.view-sales-monthly .sales-card > p:first-of-type, .view-sales-daily .sales-card > p:first-of-type { display:none; }
+h1 { margin: 0; }
+.subtitle { color: #5d6778; }
+.card { margin-top: 12px; padding: 16px; background: white; border: 1px solid #e4e8ef; border-radius: 12px; }
+form { display: grid; grid-template-columns: 1fr 2fr auto; gap: 10px; }
+.upload-form { grid-template-columns: 1fr auto; }
+.planning-form { grid-template-columns: 120px 100px auto; }
+input, button { border-radius: 8px; padding: 10px 12px; font: inherit; }
+input { border: 1px solid #c8d0dc; }
+button { border: 0; background: #1769aa; color: white; cursor: pointer; }
+button:hover { background: #0f5791; }
+.scheduler-button { margin-top: 18px; background: #0d7659; }
+.scheduler-button:hover { background: #075a43; }
+.modal-backdrop { position:fixed; inset:0; z-index:20; display:flex; align-items:center; justify-content:center; padding:24px; background:rgba(27,36,48,.42); }
+.requirement-modal { width:min(1180px, 100%); max-height:calc(100vh - 48px); overflow:auto; padding:20px; background:#fff; border-radius:12px; box-shadow:0 20px 54px rgba(16,26,40,.28); }
+.requirement-modal-header { display:flex; justify-content:space-between; align-items:start; gap:16px; border-bottom:1px solid #e3e8ef; }
+.requirement-modal-header h2 { margin:0; }.requirement-modal-header p { margin:6px 0 14px; color:#5d6778; }
+.modal-close-button { width:34px; height:34px; padding:0; border-radius:50%; background:#eef2f6; color:#455466; font-size:24px; line-height:1; }.modal-close-button:hover { background:#dce4ed; }
+.requirement-modal-table { margin-top:14px; max-height:calc(100vh - 260px); }.requirement-modal-table table { min-width:900px; }
+.requirement-modal-actions { display:flex; justify-content:flex-start; }.requirement-modal-actions .scheduler-button { margin-top:16px; }
+.initial-schedule-modal { width:min(1440px, 100%); }
+.initial-schedule-header-actions { display:flex; align-items:center; gap:10px; }
+.initial-schedule-header-actions .scheduler-button { margin-top:0; white-space:nowrap; }
+.initial-schedule-modal .requirement-modal-header p { font-size:0; }
+.initial-schedule-modal .requirement-modal-header p::after { content:"입력하지 않은 라인은 생산이 가능한 상태로만 반영되며, 필요 생산량이 배정될 때에만 생산합니다."; color:#5d6778; font-size:14px; }
+.initial-schedule-table { margin-top:16px; max-height:calc(100vh - 260px); border:1px solid #dce4ed; border-radius:8px; }
+.initial-schedule-table table { min-width:1120px; }.initial-schedule-table th { text-align:center; background:#eef4eb; }.initial-schedule-table td { text-align:center; }
+.validation-button { margin-top: 12px; background: #7448a8; }
+.validation-button:hover { background: #583487; }
+.export-button { margin-top: 12px; margin-left: 8px; background: #bd7015; }
+.export-button:hover { background: #95570c; }
+.actual-button { margin-top: 12px; background: #266b9c; }
+.reschedule-button { margin-top: 12px; margin-left: 8px; background: #a14c25; }
+.version-bar { display:flex; align-items:center; gap:10px; padding:12px; margin-top:16px; background:#eef4fb; border-radius:8px; }
+.version-bar span { flex:1; color:#5d6778; font-size:13px; }
+.version-bar button { padding:7px 10px; font-size:13px; }
+.scheduler-settings { display: grid; grid-template-columns: 1fr 140px auto; gap: 10px; margin-top: 16px; }
+.scheduler-settings h3, .scheduler-settings p { grid-column: 1 / -1; margin: 0; }
+.dashboard { margin-top: 18px; padding: 18px; background: #f5f8fc; border-radius: 10px; }
+.dashboard h3 { margin-top: 0; }
+.dashboard-summary-grid { display:grid; grid-template-columns:repeat(3, minmax(0, 1fr)); gap:12px; margin:12px 0 24px; }
+.dashboard-summary-grid > div, .dashboard-plan-summary { padding:14px; border:1px solid #d8ddd3; border-radius:9px; background:#fbfcf8; }
+.dashboard-summary-grid h3 { margin:0 0 8px; font-size:20px; }
+.summary-table { margin-top:0; max-height:250px; }
+.summary-table table { min-width:0; font-size:13px; }
+.summary-table th, .summary-table td, .summary-spec-table th, .summary-spec-table td { text-align:center; border:1px solid #e1e6dc; }
+.summary-spec-table { max-height:360px; }
+.metrics { display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; }
+.metrics div { padding: 12px; background: white; border: 1px solid #e4e8ef; border-radius: 8px; }
+.metrics span, .product-bars span { display: block; color: #5d6778; font-size: 13px; }
+.metrics strong { display: block; margin-top: 5px; font-size: 18px; }
+.product-bars { margin-top: 16px; display: grid; gap: 8px; }
+.product-bars > div { display: grid; grid-template-columns: 80px 1fr 145px; align-items: center; gap: 8px; }
+.product-bars > div > div { height: 10px; background: #dfe7f0; border-radius: 99px; overflow: hidden; }
+.product-bars i { display: block; height: 100%; background: #1769aa; }
+.product-bars em { font-style: normal; font-size: 13px; text-align: right; }
+.shortage-row { background: #fff0f0; color: #a32222; }
+.locked-row { background: #fff9df; }
+.table-input { width: 118px; min-width: 0; padding: 6px 7px; border-radius: 5px; }
+.product-input { width: 82px; }
+.quantity-input { width: 88px; }
+.note-input { width: 140px; }
+.small-button { padding: 7px 9px; font-size: 13px; }
+ul { padding: 0; list-style: none; }
+li { padding: 12px; border-bottom: 1px solid #edf0f4; display: flex; justify-content: space-between; gap: 12px; align-items: center; }
+.delete-button { padding: 6px 10px; background: #b93737; font-size: 13px; }
+.delete-button:hover { background: #8f2424; }
+.error { color: #bf2424; }
+.success { color: #16733a; }
+.table-wrap { overflow: auto; margin-top: 12px; max-height: calc(100vh - 180px); }
+table { width: 100%; border-collapse: collapse; }
+th, td { padding: 10px; text-align: left; border-bottom: 1px solid #edf0f4; }
+thead th { background: #f5f7fb; position: sticky; top: 0; z-index: 2; }
+thead tr:nth-child(2) th { top: 39px; z-index: 3; }
+thead tr:nth-child(3) th { top: 78px; z-index: 4; }
+.daily-grid { max-height: 620px; border:1px solid #dde3ea; }
+.daily-grid table { min-width: 1100px; font-size:13px; }
+.daily-grid th, .daily-grid td { text-align:center; white-space:nowrap; border:1px solid #e1e5e8; padding:9px 10px; }
+.daily-grid thead tr:first-child th { background:#dbe8f1; color:#314b5c; }
+.daily-grid .plant-header { background:#dfeee7 !important; }
+.daily-grid thead tr:nth-child(2) th { background:#f1f2ef; color:#56605b; }
+.requested-grid thead tr:nth-child(2) th { background:#f0f1ed; color:#56605b; }
+.requested-grid thead tr:nth-child(3) th { background:#fafbfa; color:#56605b; }
+.daily-filters { display:flex; gap:12px; align-items:end; margin:14px 0; }
+.daily-filters label { display:grid; gap:5px; color:#5d6778; font-size:13px; }
+.daily-filters select { min-width:150px; padding:8px; border:1px solid #c8d0dc; border-radius:6px; background:white; font:inherit; }
+.saturday { color:#2675b8; font-weight:700; }.sunday { color:#c34b4b; font-weight:700; }
+.spec-layout { display:grid; grid-template-columns:130px minmax(0,1fr); gap:22px; }.spec-layout > aside { display:grid; align-content:start; gap:8px; padding:14px; border:1px solid #d5d9ce; border-radius:8px; font-size:13px; }.spec-layout aside hr { width:100%; border:0; border-top:1px solid #e2e5dc; }.section-row { text-align:left !important; background:#f3f6ee !important; }
+.raw-layout { display:grid; grid-template-columns:120px minmax(0,1fr); gap:18px; }.raw-layout > aside { display:grid; align-content:start; gap:9px; padding:12px; border:1px solid #d5d9ce; border-radius:8px; font-size:13px; }.raw-flow-table table { min-width:1000px; }.negative-stock { color:#e22; font-weight:700; }
+.sales-comparison-files { display:grid; grid-template-columns:repeat(2, minmax(0, 1fr)); gap:46px; margin:20px 0 14px; }
+.comparison-file-panel h3 { display:inline-block; margin:0 0 24px; padding:7px 16px; border:1px solid #2e2e2e; font-size:18px; font-weight:700; }
+.base-file-panel h3, .base-file-panel .comparison-file-fields label span { background:#e7f0ff; border-color:#4b78bb; color:#204f91; }
+.compare-file-panel h3, .compare-file-panel .comparison-file-fields label span { background:#fff0df; border-color:#c9873d; color:#94520d; }
+.comparison-file-fields { display:grid; grid-template-columns:1fr 1fr; gap:26px; }
+.comparison-file-fields label { display:grid; gap:0; color:#222; font-size:14px; }
+.comparison-file-fields label span { width:max-content; padding:2px 10px; border:1px solid #2e2e2e; border-bottom:0; font-weight:700; }
+.comparison-file-fields select, .comparison-file-fields output { min-height:42px; padding:10px; border:1px solid #2e2e2e; border-radius:0; background:white; color:#222; font:inherit; }
+.comparison-file-fields select { width:100%; }
+.comparison-file-fields output { display:flex; align-items:center; }
+.comparison-button { display:block; margin:18px auto; }
+.comparison-table { margin-top:30px; max-height:none; border:1px solid #2e2e2e; }
+.comparison-table table { min-width:760px; }
+.comparison-table th, .comparison-table td { border:1px solid #2e2e2e; text-align:center; vertical-align:middle; }
+.comparison-table thead th { background:white; color:#1b2430; }
+.comparison-period-total th, .comparison-period-total td { font-weight:700; background:#f1f3f5; }
+.preview-toggle { margin-top:12px; padding:7px 10px; background:#5e7185; font-size:13px; }
+.preview-toggle:hover { background:#46596d; }
+.upload-preview-table { max-height:430px; border:1px solid #d8e0e8; border-radius:8px; }
+.upload-preview-table th, .upload-preview-table td { white-space:nowrap; }
+.increase, .increase-row td:last-child, .increase-row td:nth-last-child(2) { color:#16733a; }
+.decrease, .decrease-row td:last-child, .decrease-row td:nth-last-child(2) { color:#b23a3a; }
+@media (max-width: 760px) { main { padding: 20px; } .planning-sidebar { position:static; width:auto; margin-bottom:16px; } .view-production-monthly .plant-picker { max-width:100%; } .schedule-editor-header, .schedule-editor-actions { display:grid; grid-template-columns:1fr; } form, .scheduler-settings, .metrics, .dashboard-summary-grid, .spec-layout, .inventory-layout, .raw-layout, .sales-comparison-files, .comparison-file-fields { grid-template-columns: 1fr; } .sales-comparison-files { gap:18px; } .export-button { margin-left: 0; } .product-bars > div { grid-template-columns: 1fr; } .product-bars em { text-align: left; } }
