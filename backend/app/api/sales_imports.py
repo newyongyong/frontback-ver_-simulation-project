@@ -1,16 +1,37 @@
 """판매계획 Excel 업로드 및 조회 API."""
 
 from fastapi import APIRouter, Depends, File, HTTPException, UploadFile, status
+from fastapi.responses import StreamingResponse
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.api.dependencies import get_db
 from app.models.sales_plan import SalesImport, SalesPlanItem
+from app.models.product import Product
 from app.models.active_source import ActiveDataSource
 from app.schemas.sales_plan import SalesImportResponse, SalesPlanComparisonResponse, SalesPlanItemResponse
-from app.services.sales_importer import import_sales_workbook
+from app.services.sales_importer import import_sales_workbook, validate_sales_workbook, validation_report_workbook
 
 router = APIRouter(prefix="/sales", tags=["sales plans"])
+
+
+async def _validate_upload(file: UploadFile, db: Session):
+    if not file.filename or not file.filename.lower().endswith(".xlsx"):
+        raise HTTPException(status_code=400, detail=".xlsx 형식의 판매계획 파일만 검증할 수 있습니다.")
+    return validate_sales_workbook(await file.read(), {row.code for row in db.scalars(select(Product))})
+
+
+@router.post("/imports/validate")
+async def validate_sales_import(file: UploadFile = File(...), db: Session = Depends(get_db)):
+    return await _validate_upload(file, db)
+
+
+@router.post("/imports/validation-report")
+async def download_validation_report(file: UploadFile = File(...), db: Session = Depends(get_db)):
+    validation = await _validate_upload(file, db)
+    output = validation_report_workbook(validation)
+    headers = {"Content-Disposition": 'attachment; filename="sales_plan_validation_errors.xlsx"'}
+    return StreamingResponse(output, media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", headers=headers)
 
 
 @router.post("/imports", response_model=SalesImportResponse, status_code=status.HTTP_201_CREATED)

@@ -12,7 +12,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.api.dependencies import get_db
-from app.models.schedule import ProductionScheduleItem, RawMaterialDailyBalance, RawMaterialValidationRun, ScheduleRun, SchedulerSetting, UnscheduledRequirement, WorkCalendarDay
+from app.models.schedule import ProductionScheduleItem, RawMaterialDailyBalance, RawMaterialValidationRun, ScheduleChangeHistory, ScheduleRun, SchedulerSetting, UnscheduledRequirement, WorkCalendarDay
 from app.models.planning_master import Plant, ProductionLine
 from app.models.planning_run import PlanningRun
 from app.schemas.schedule import CalendarDayResponse, CalendarSettingsResponse, CalendarSettingsUpdate, RawMaterialDailyBalanceResponse, RawMaterialValidationResponse, ScheduleCopyRequest, ScheduleCreateRequest, ScheduleItemCreate, ScheduleItemUpdate, ScheduleRunResponse, ScheduleStatusUpdate, ProductionScheduleItemResponse, UnscheduledRequirementResponse
@@ -46,7 +46,18 @@ def create_run(planning_run_id: int, payload: ScheduleCreateRequest, db: Session
 @router.get("/runs/versions")
 def list_versions(db: Session = Depends(get_db)):
     rows = db.execute(select(ScheduleRun, PlanningRun).join(PlanningRun, PlanningRun.id == ScheduleRun.planning_run_id).order_by(ScheduleRun.created_at.desc())).all()
-    return [{"id": run.id, "version": run.version, "created_at": run.created_at, "status": run.status, "planning_year": plan.year, "planning_month": plan.month, "planning_end_year": plan.end_year, "planning_end_month": plan.end_month} for run, plan in rows]
+    return [{"id": run.id, "version": run.version, "created_at": run.created_at, "status": "저장" if run.status == "검토 중" else run.status, "planning_year": plan.year, "planning_month": plan.month, "planning_end_year": plan.end_year, "planning_end_month": plan.end_month} for run, plan in rows]
+
+
+@router.get("/runs")
+def list_runs(status: str | None = None, db: Session = Depends(get_db)):
+    """상태별로 불러오기 화면에 표시할 생산계획 이력을 반환한다."""
+    query = select(ScheduleRun, PlanningRun).join(PlanningRun, PlanningRun.id == ScheduleRun.planning_run_id)
+    if status:
+        # 이전 화면에서 사용하던 '검토 중'은 저장 이력으로 계속 조회할 수 있게 한다.
+        query = query.where(ScheduleRun.status.in_(("저장", "검토 중")) if status == "저장" else ScheduleRun.status == status)
+    rows = db.execute(query.order_by(ScheduleRun.created_at.desc())).all()
+    return [{"id": run.id, "version": run.version, "created_at": run.created_at, "status": "저장" if run.status == "검토 중" else run.status, "planning_year": plan.year, "planning_month": plan.month, "planning_end_year": plan.end_year, "planning_end_month": plan.end_month} for run, plan in rows]
 
 
 @router.get("/runs/compare")
@@ -85,6 +96,22 @@ def get_run(schedule_run_id: int, db: Session = Depends(get_db)) -> ScheduleRunR
     items = list(db.scalars(select(ProductionScheduleItem).where(ProductionScheduleItem.schedule_run_id == schedule_run_id).order_by(ProductionScheduleItem.planned_date, ProductionScheduleItem.line_code)))
     shortages = list(db.scalars(select(UnscheduledRequirement).where(UnscheduledRequirement.schedule_run_id == schedule_run_id).order_by(UnscheduledRequirement.product_code)))
     return _response(run, items, shortages)
+
+
+@router.get("/runs/{schedule_run_id}/change-history")
+def get_change_history(schedule_run_id: int, db: Session = Depends(get_db)):
+    if not db.get(ScheduleRun, schedule_run_id):
+        raise HTTPException(status_code=404, detail="생산계획 실행 이력을 찾을 수 없습니다.")
+    rows = list(db.scalars(
+        select(ScheduleChangeHistory)
+        .where(ScheduleChangeHistory.schedule_run_id == schedule_run_id)
+        .order_by(ScheduleChangeHistory.changed_at.desc())
+    ))
+    return [{
+        "id": row.id, "changed_at": row.changed_at, "changed_by": row.changed_by,
+        "change_reason": row.change_reason, "before_values": row.before_values,
+        "after_values": row.after_values,
+    } for row in rows]
 
 
 @router.patch("/items/{item_id}", response_model=ScheduleRunResponse)
@@ -133,7 +160,7 @@ def create_item(schedule_run_id: int, payload: ScheduleItemCreate, db: Session =
 def update_status(schedule_run_id: int, payload: ScheduleStatusUpdate, db: Session = Depends(get_db)) -> ScheduleRunResponse:
     from datetime import datetime
     run=db.get(ScheduleRun,schedule_run_id)
-    if not run or payload.status not in {"작성 중","검토 중","확정"}: raise HTTPException(400,"유효한 스케줄 상태가 아닙니다.")
+    if not run or payload.status not in {"작성 중", "저장", "검토 중", "확정"}: raise HTTPException(400,"유효한 스케줄 상태가 아닙니다.")
     run.status=payload.status; run.change_reason=payload.change_reason.strip(); run.confirmed_at=datetime.now() if payload.status=="확정" else None; db.commit()
     items=list(db.scalars(select(ProductionScheduleItem).where(ProductionScheduleItem.schedule_run_id==run.id).order_by(ProductionScheduleItem.planned_date,ProductionScheduleItem.line_code)))
     shortages=list(db.scalars(select(UnscheduledRequirement).where(UnscheduledRequirement.schedule_run_id==run.id).order_by(UnscheduledRequirement.product_code)))

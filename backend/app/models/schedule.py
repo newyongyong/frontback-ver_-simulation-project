@@ -2,7 +2,7 @@
 
 from datetime import date, datetime
 
-from sqlalchemy import Date, DateTime, Float, ForeignKey, String, UniqueConstraint
+from sqlalchemy import JSON, Date, DateTime, Float, ForeignKey, String, UniqueConstraint
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.database import Base
@@ -41,6 +41,21 @@ class ProductionScheduleItem(Base):
     changeover_hours: Mapped[float] = mapped_column(Float, default=0.0)
     is_locked: Mapped[bool] = mapped_column(default=False)
     adjustment_note: Mapped[str] = mapped_column(String(500), default="")
+
+
+class ScheduleChangeHistory(Base):
+    """사용자가 저장한 생산계획 편집 내용을 전·후 값으로 보관한다."""
+
+    __tablename__ = "schedule_change_histories"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    schedule_run_id: Mapped[int] = mapped_column(ForeignKey("schedule_runs.id"), index=True)
+    schedule_item_id: Mapped[int] = mapped_column(ForeignKey("production_schedule_items.id"), index=True)
+    changed_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.now, index=True)
+    changed_by: Mapped[str] = mapped_column(String(100), default="현재 사용자")
+    change_reason: Mapped[str] = mapped_column(String(500), default="")
+    before_values: Mapped[dict[str, object]] = mapped_column(JSON)
+    after_values: Mapped[dict[str, object]] = mapped_column(JSON)
 
 
 class UnscheduledRequirement(Base):

@@ -38,6 +38,11 @@ main { max-width: none; width: 100%; margin: 0; padding: 14px 32px 14px 280px; }
 .planning-sidebar nav details details { margin-left:12px; }
 .planning-sidebar nav details details > a { margin-left:10px; }
 .planning-sidebar nav a:hover, .planning-sidebar summary:hover { filter:brightness(.96); }
+.sidebar-plan-actions { display:grid; gap:8px; padding-top:14px; }
+.plan-load-toggle { width:100%; background:#4d6e88; }.plan-load-toggle:hover { background:#395870; }
+.plan-load-panel { display:grid; gap:8px; padding:10px; border:1px solid #cdd8e2; border-radius:8px; background:#f3f7fb; }
+.plan-load-panel label { display:grid; gap:4px; font-size:12px; }.plan-load-panel select { padding:7px; font-size:12px; }
+.plan-load-button { padding:8px; background:#1769aa; }.plan-load-button:disabled { background:#a9bbc9; cursor:not-allowed; }
 .view-dashboard .card:not(.overview), .view-planning .overview, .view-schedule .overview, .view-actual .overview, .view-data .overview { display: none; }
 .planning-not-started > .app-header, .planning-not-started > .card { display:none !important; }
 .planning-start-placeholder { position:fixed; inset:0 0 0 280px; display:grid; place-items:center; color:#4a6780; font-size:42px; font-weight:700; letter-spacing:-.04em; }
@@ -57,6 +62,7 @@ main { max-width: none; width: 100%; margin: 0; padding: 14px 32px 14px 280px; }
 .view-data-upload .actual-upload-card { order:8; }
 .view-data-upload .product-master-card { order:9; }
 .view-data-upload .upload-form { grid-template-columns:minmax(0, 40%) auto; justify-content:start; }
+.view-data-upload .sales-upload-form { grid-template-columns:minmax(0, 40%) auto auto; }
 .data-status-card td:last-child { white-space:nowrap; }
 .data-status-card td:last-child select { width:180px; min-width:180px; max-width:180px; padding:5px 7px; vertical-align:middle; }
 .data-status-card td:last-child .small-button { width:48px; margin-left:6px; padding:7px 0; vertical-align:middle; }
@@ -78,6 +84,7 @@ main { max-width: none; width: 100%; margin: 0; padding: 14px 32px 14px 280px; }
 .schedule-editor-header h2 { margin:0; }.schedule-editor-header p { margin:6px 0 0; color:#5d6778; }
 .schedule-editor-actions { display:flex; gap:8px; align-items:center; }.schedule-editor-actions input { min-width:220px; padding:8px; }.schedule-editor-actions button { padding:9px 12px; }.schedule-editor-actions button:nth-last-child(2) { background:#0d7659; }.schedule-editor-actions button:last-child { background:#6d4c9a; }
 .schedule-editor-card { border-color:#cfdccf; }.schedule-editor-table { max-height:520px; border:1px solid #dde3ea; border-radius:8px; }.schedule-editor-table table { min-width:760px; }.schedule-editor-table th { text-align:center; background:#eef4eb; }.schedule-editor-table td { text-align:center; }
+.change-history-panel { margin:12px 0; padding:10px 12px; border:1px solid #d6e0ea; border-radius:8px; background:#f8fafc; }.change-history-panel summary { cursor:pointer; color:#365770; font-weight:700; }.change-history-panel .table-wrap { max-height:260px; }.change-history-panel table { min-width:860px; }.change-history-panel th, .change-history-panel td { font-size:12px; white-space:nowrap; }
 .schedule-editor-table { max-height:620px; }.schedule-editor-table table { min-width:1100px; }.cell-input, .cell-select { width:84px; min-width:0; padding:5px; border:1px solid #cbd6e1; border-radius:4px; background:#fff; font:inherit; text-align:center; }.cell-input.product-input { width:105px; }.cell-select { width:70px; }.cell-input:disabled, .cell-select:disabled { background:#f1f3f5; color:#7d8791; }
 .view-production-monthly .card:not(.planning-card):not(.reference-panel):not(.production-monthly-panel) { display:none; }
 .view-sales-monthly .card:not(.sales-card):not(.reference-panel), .view-sales-daily .card:not(.sales-card):not(.reference-panel) { display:none; }
@@ -116,6 +123,10 @@ h1 { margin: 0; }
 .card { margin-top: 12px; padding: 16px; background: white; border: 1px solid #e4e8ef; border-radius: 12px; }
 form { display: grid; grid-template-columns: 1fr 2fr auto; gap: 10px; }
 .upload-form { grid-template-columns: 1fr auto; }
+.sales-upload-form { grid-template-columns:minmax(0, 1fr) auto auto; }
+.validation-check-button { background:#4d6e88; }.validation-check-button:hover { background:#395870; }
+.sales-validation-result { margin-top:12px; padding:14px; border:1px solid #c8d4df; border-radius:9px; }.sales-validation-result.valid { border-color:#b9ddc3; background:#f0f9f2; }.sales-validation-result.invalid { border-color:#edbbbb; background:#fff5f5; }
+.sales-validation-result h3 { margin:0 0 10px; font-size:16px; }.sales-validation-result > div { display:flex; flex-wrap:wrap; gap:8px; }.sales-validation-result > div > span { padding:5px 8px; border-radius:5px; background:#fff; font-size:13px; }.sales-validation-result p { margin:10px 0; font-size:13px; }.validation-report-button { background:#a14c25; }.validation-error-table { max-height:250px; }
 .planning-form { grid-template-columns: 120px 100px auto; }
 input, button { border-radius: 8px; padding: 10px 12px; font: inherit; }
 input { border: 1px solid #c8d0dc; }
@@ -152,11 +163,20 @@ button:hover { background: #0f5791; }
 .dashboard h3 { margin-top: 0; }
 .dashboard-summary-grid { display:grid; grid-template-columns:repeat(3, minmax(0, 1fr)); gap:12px; margin:12px 0 24px; }
 .dashboard-summary-grid > div, .dashboard-plan-summary { padding:14px; border:1px solid #d8ddd3; border-radius:9px; background:#fbfcf8; }
-.dashboard-summary-grid h3 { margin:0 0 8px; font-size:20px; }
+.dashboard-summary-grid h3 { margin:0 0 8px; font-size:24px; }
+.dashboard-plan-summary { margin:0 0 24px; }.dashboard-plan-summary h2 { margin:0 0 10px; font-size:20px; }.dashboard-plan-summary ol { display:grid; grid-template-columns:1fr; gap:10px; margin:0; padding-left:28px; }.dashboard-plan-summary li { display:list-item; min-height:0; padding:0 4px 0 0; border:0; font-size:17px; line-height:1.55; align-items:initial; }.dashboard-plan-summary p { margin:0; color:#687383; }
 .summary-table { margin-top:0; max-height:250px; }
-.summary-table table { min-width:0; font-size:13px; }
+.summary-table table { min-width:0; font-size:inherit; }
 .summary-table th, .summary-table td, .summary-spec-table th, .summary-spec-table td { text-align:center; border:1px solid #e1e6dc; }
 .summary-spec-table { max-height:360px; }
+.dashboard-spec-table { width:50%; }
+.dashboard-alert-section { margin:0 0 24px; }
+.dashboard-alert-section h2 { margin:0 0 10px; font-size:20px; }
+.dashboard-alert-grid { display:grid; grid-template-columns:minmax(0, .6fr) minmax(0, 1.2fr) minmax(0, 1.2fr); gap:12px; }
+.dashboard-alert { min-height:116px; padding:14px; border:1px solid #d7dee7; border-radius:9px; background:#f8fafc; }
+.dashboard-alert span { display:block; font-size:13px; font-weight:700; }.dashboard-alert strong { display:block; margin-top:8px; font-size:24px; }.dashboard-alert p { margin:8px 0 0; font-size:12px; line-height:1.4; }
+.dashboard-alert.has-details { display:grid; grid-template-columns:minmax(100px, 31%) minmax(0, 1fr); gap:12px; }.dashboard-alert-details { display:grid; grid-template-columns:repeat(2, minmax(0, 1fr)); align-content:start; gap:8px 14px; margin:0; padding:0; list-style:none; font-size:16px; font-weight:700; line-height:1.4; }.dashboard-alert-details li { display:block; min-height:0; padding:0; border:0; color:inherit; white-space:nowrap; }
+.dashboard-alert.safe { border-color:#b9ddc3; background:#f0f9f2; color:#1c6c38; }.dashboard-alert.warning { border-color:#efd489; background:#fff9e9; color:#80610b; }.dashboard-alert.danger { border-color:#edbbbb; background:#fff1f1; color:#a32c2c; }
 .metrics { display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; }
 .metrics div { padding: 12px; background: white; border: 1px solid #e4e8ef; border-radius: 8px; }
 .metrics span, .product-bars span { display: block; color: #5d6778; font-size: 13px; }
@@ -177,6 +197,8 @@ ul { padding: 0; list-style: none; }
 li { padding: 12px; border-bottom: 1px solid #edf0f4; display: flex; justify-content: space-between; gap: 12px; align-items: center; }
 .delete-button { padding: 6px 10px; background: #b93737; font-size: 13px; }
 .delete-button:hover { background: #8f2424; }
+.planning-delete-button { width:100%; margin-top:8px; }
+.data-status-card td:last-child .history-delete-button { width:auto; margin-left:6px; padding:7px 10px; vertical-align:middle; }
 .error { color: #bf2424; }
 .success { color: #16733a; }
 .table-wrap { overflow: auto; margin-top: 12px; max-height: calc(100vh - 180px); }
@@ -221,4 +243,4 @@ thead tr:nth-child(3) th { top: 78px; z-index: 4; }
 .upload-preview-table th, .upload-preview-table td { white-space:nowrap; }
 .increase, .increase-row td:last-child, .increase-row td:nth-last-child(2) { color:#16733a; }
 .decrease, .decrease-row td:last-child, .decrease-row td:nth-last-child(2) { color:#b23a3a; }
-@media (max-width: 760px) { main { padding: 20px; } .planning-sidebar { position:static; width:auto; margin-bottom:16px; } .view-production-monthly .plant-picker { max-width:100%; } .schedule-editor-header, .schedule-editor-actions { display:grid; grid-template-columns:1fr; } form, .scheduler-settings, .metrics, .dashboard-summary-grid, .spec-layout, .inventory-layout, .raw-layout, .sales-comparison-files, .comparison-file-fields { grid-template-columns: 1fr; } .sales-comparison-files { gap:18px; } .export-button { margin-left: 0; } .product-bars > div { grid-template-columns: 1fr; } .product-bars em { text-align: left; } }
+@media (max-width: 760px) { main { padding: 20px; } .planning-sidebar { position:static; width:auto; margin-bottom:16px; } .view-production-monthly .plant-picker { max-width:100%; } .schedule-editor-header, .schedule-editor-actions { display:grid; grid-template-columns:1fr; } form, .scheduler-settings, .metrics, .dashboard-summary-grid, .dashboard-alert-grid, .spec-layout, .inventory-layout, .raw-layout, .sales-comparison-files, .comparison-file-fields { grid-template-columns: 1fr; } .dashboard-spec-table { width:100%; } .sales-comparison-files { gap:18px; } .export-button { margin-left: 0; } .product-bars > div { grid-template-columns: 1fr; } .product-bars em { text-align: left; } }

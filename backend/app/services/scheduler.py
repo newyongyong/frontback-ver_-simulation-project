@@ -13,7 +13,7 @@ from app.models.master_import import MasterImport, MasterRecord
 from app.models.operations import MaintenanceImport, MaintenanceSchedule
 from app.models.planning_master import LineProduct, Plant, ProductionLine, ProductQualitySpec
 from app.models.planning_run import PlanningRun, ProductionRequirement
-from app.models.schedule import ProductionScheduleItem, ScheduleRun, SchedulerSetting, UnscheduledRequirement, WorkCalendarDay
+from app.models.schedule import ProductionScheduleItem, ScheduleChangeHistory, ScheduleRun, SchedulerSetting, UnscheduledRequirement, WorkCalendarDay
 from app.models.production_actual import ProductionActualImport, ProductionActualItem
 from app.models.active_source import ActiveDataSource
 
@@ -188,6 +188,13 @@ def update_schedule_item(db: Session, item_id: int, planned_date: date, product_
     item = db.get(ProductionScheduleItem, item_id)
     if not item:
         raise ValueError("수정할 생산 스케줄을 찾을 수 없습니다.")
+    before_values = {
+        "planned_date": item.planned_date.isoformat(), "line_name": item.line_name,
+        "product_code": item.product_code, "planned_quantity_ton": item.planned_quantity_ton,
+        "downtime_hours": item.downtime_hours, "work_rate": item.work_rate,
+        "operation_status": item.operation_status, "is_locked": item.is_locked,
+        "adjustment_note": item.adjustment_note,
+    }
     if item.is_locked and is_locked and (
         planned_date != item.planned_date
         or product_code != item.product_code
@@ -238,6 +245,18 @@ def update_schedule_item(db: Session, item_id: int, planned_date: date, product_
     item.planned_quantity_ton, item.available_capacity_ton = new_quantity, capacity
     item.downtime_hours, item.work_rate, item.yield_rate, item.operation_status, item.changeover_hours = downtime, rate, yield_rate, status, changeover
     item.is_locked, item.adjustment_note = is_locked, adjustment_note.strip()
+    after_values = {
+        "planned_date": item.planned_date.isoformat(), "line_name": item.line_name,
+        "product_code": item.product_code, "planned_quantity_ton": item.planned_quantity_ton,
+        "downtime_hours": item.downtime_hours, "work_rate": item.work_rate,
+        "operation_status": item.operation_status, "is_locked": item.is_locked,
+        "adjustment_note": item.adjustment_note,
+    }
+    if before_values != after_values:
+        db.add(ScheduleChangeHistory(
+            schedule_run_id=run.id, schedule_item_id=item.id,
+            change_reason=adjustment_note.strip(), before_values=before_values, after_values=after_values,
+        ))
     all_items = list(db.scalars(select(ProductionScheduleItem).where(ProductionScheduleItem.schedule_run_id == run.id)))
     scheduled_by_product: dict[str, float] = {}
     for row in all_items:
@@ -246,6 +265,8 @@ def update_schedule_item(db: Session, item_id: int, planned_date: date, product_
     for shortage in shortages:
         shortage.scheduled_quantity_ton = scheduled_by_product.get(shortage.product_code, 0.0)
         shortage.unallocated_quantity_ton = max(0.0, shortage.required_quantity_ton - shortage.scheduled_quantity_ton)
+    if run.status == "작성 중":
+        run.status = "저장"
     db.commit()
     items = list(db.scalars(select(ProductionScheduleItem).where(ProductionScheduleItem.schedule_run_id == run.id).order_by(ProductionScheduleItem.planned_date, ProductionScheduleItem.line_code)))
     for row in items + shortages:
