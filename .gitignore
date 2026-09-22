@@ -8,6 +8,7 @@ backend/dist/
 # SQLite runtime data
 backend/data/*.db
 backend/data/uploads/
+!backend/data/production_planning.db
 
 # Next.js
 frontend/node_modules/
