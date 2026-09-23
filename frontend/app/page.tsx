@@ -20,7 +20,7 @@ type BomSpecification = { output_product_code: string; input_material_code: stri
 type Requirement = { id: number; product_code: string; sales_demand_ton: number; available_inventory_ton: number; safety_stock_days: number; average_daily_sales_ton: number; safety_stock_target_ton: number; required_production_ton: number };
 type ScheduleItem = { id: number; planned_date: string; plant_name: string; line_code: string; line_name: string; product_code: string; planned_quantity_ton: number; available_capacity_ton: number; downtime_hours: number; work_rate: number; yield_rate: number; operation_status: string; changeover_hours: number; is_locked: boolean; adjustment_note: string };
 type ScheduleShortage = { id: number; product_code: string; required_quantity_ton: number; scheduled_quantity_ton: number; unallocated_quantity_ton: number };
-type ScheduleRunMeta = { id:number; planning_run_id:number; version:number; status:string; change_reason:string; confirmed_at:string|null };
+type ScheduleRunMeta = { id:number; planning_run_id:number; version:number; status:string; planning_mode:string; change_reason:string; confirmed_at:string|null };
 type RawMaterialBalance = { id: number; balance_date: string; plant_name: string; material_code: string; opening_quantity_ton: number; inbound_quantity_ton: number; required_quantity_ton: number; ending_quantity_ton: number; shortage_quantity_ton: number };
 type CalendarDay = { calendar_date: string; is_working: boolean; note: string };
 type ActualComparison = { date: string; plant_name: string; line_name: string; product_code: string; planned_ton: number; actual_ton: number; variance_ton: number };
@@ -73,6 +73,7 @@ export default function Home() {
   const [isSalesValidating, setIsSalesValidating] = useState(false);
   const [salesValidation, setSalesValidation] = useState<SalesValidation | null>(null);
   const salesFileInputRef = useRef<HTMLInputElement>(null);
+  const rawInboundAlertInputRef = useRef<HTMLInputElement>(null);
   const [productInventoryImport, setProductInventoryImport] = useState<InventoryImport | null>(null);
   const [rawInventoryImport, setRawInventoryImport] = useState<InventoryImport | null>(null);
   const [productInventory, setProductInventory] = useState<ProductInventory[]>([]);
@@ -121,6 +122,7 @@ export default function Home() {
   const [planLoadStatus, setPlanLoadStatus] = useState("확정");
   const [loadableSchedules, setLoadableSchedules] = useState<ScheduleVersion[]>([]);
   const [selectedLoadScheduleId, setSelectedLoadScheduleId] = useState<number | null>(null);
+  const [planningMode, setPlanningMode] = useState("판매 목표 우선");
 
   async function loadProducts() {
     const health = await fetch(`${API_URL}/health`);
@@ -210,6 +212,16 @@ export default function Home() {
   const selectedRawMaterialCodes = useMemo(() => { if (dailyProcessFilter === "all" && dailyLineFilter === "all") return null; const selectedProducts = new Set(scheduleItems.filter((item) => selectedRawLineCodes.has(item.line_code)).map((item) => item.product_code)); return new Set(bomSpecifications.filter((bom) => [...selectedProducts].some((product) => bom.output_product_code.startsWith(product))).map((bom) => bom.input_material_code)); }, [dailyProcessFilter, dailyLineFilter, scheduleItems, selectedRawLineCodes, bomSpecifications]);
   const rawMaterials = useMemo(() => [...new Set([...rawInventory, ...rawInboundItems].filter((item) => (dailyPlantFilter === "all" || item.plant_name === dailyPlantFilter) && (!selectedRawMaterialCodes || selectedRawMaterialCodes.has(item.material_code))).map((item) => item.material_code).concat(rawMaterialBalances.filter((item) => (dailyPlantFilter === "all" || item.plant_name === dailyPlantFilter) && (!selectedRawMaterialCodes || selectedRawMaterialCodes.has(item.material_code))).map((item) => item.material_code)))].sort(), [rawInventory, rawInboundItems, rawMaterialBalances, dailyPlantFilter, selectedRawMaterialCodes]);
   const rawStockByDayMaterial = useMemo(() => { const snapshots = new Map<string, { date: string; quantity: number }>(); rawInventory.filter((item) => item.snapshot_date <= dailyStartDate).forEach((item) => { const key = `${item.plant_name}__${item.material_code}`; const current = snapshots.get(key); if (!current || item.snapshot_date > current.date) snapshots.set(key, { date: item.snapshot_date, quantity: item.quantity_ton }); else if (item.snapshot_date === current.date) current.quantity += item.quantity_ton; }); const balances = new Map([...snapshots].map(([key, value]) => [key, value.quantity])); const stockByDay = new Map<string, number>(); dailyDates.forEach((day) => { rawMaterials.forEach((material) => { const plants = [...new Set([...rawInventory, ...rawInboundItems, ...rawMaterialBalances].filter((item) => item.material_code === material && (dailyPlantFilter === "all" || item.plant_name === dailyPlantFilter)).map((item) => item.plant_name))]; const total = plants.reduce((sum, plant) => { const key = `${plant}__${material}`; const inbound = rawInboundItems.filter((item) => item.inbound_date === day && item.plant_name === plant && item.material_code === material).reduce((value, item) => value + item.quantity_ton, 0); const usage = rawMaterialBalances.filter((item) => item.balance_date === day && item.plant_name === plant && item.material_code === material).reduce((value, item) => value + item.required_quantity_ton, 0); const next = (balances.get(key) ?? 0) + inbound - usage; balances.set(key, next); return sum + next; }, 0); stockByDay.set(`${day}__${material}`, total); }); }); return stockByDay; }, [rawInventory, rawInboundItems, rawMaterialBalances, dailyStartDate, dailyDates, rawMaterials, dailyPlantFilter]);
+  const rawSupplyRisks = useMemo(() => {
+    const shortages = new Map<string, { day: string; quantity: number }>();
+    rawStockByDayMaterial.forEach((stock, key) => {
+      if (stock >= 0) return;
+      const [day, material] = key.split("__");
+      const current = shortages.get(material);
+      if (!current || Math.abs(stock) > current.quantity) shortages.set(material, { day, quantity: Math.abs(stock) });
+    });
+    return [...shortages.entries()].map(([material, risk]) => ({ material, ...risk })).sort((left, right) => left.day.localeCompare(right.day) || right.quantity - left.quantity);
+  }, [rawStockByDayMaterial]);
   const monthlySales = useMemo(() => Object.values(salesItems.reduce<Record<string, { period: string; product: string; quantity: number }>>((all, item) => { const key = `${item.year}-${item.month}-${item.product_code}`; const row = all[key] ?? { period: `${item.year}-${String(item.month).padStart(2, "0")}`, product: item.product_code, quantity: 0 }; row.quantity += item.quantity_ton; all[key] = row; return all; }, {})), [salesItems]);
   const salesComparisonPeriods = useMemo(() => {
     if (!salesComparison) return [];
@@ -631,10 +643,12 @@ export default function Home() {
     const body = new FormData();
     body.append("file", input.files[0]);
     try {
-      const response = await fetch(`${API_URL}/inventories/raw-inbound/imports`, { method: "POST", body });
+      const response = await fetch(`${API_URL}/inventories/raw-inbound/imports?merge=true`, { method: "POST", body });
       const result = await response.json();
       if (!response.ok) throw new Error(result.detail ?? "운영 파일을 등록하지 못했습니다.");
       setRawInboundImport(result);
+      const items = await fetch(`${API_URL}/inventories/raw-inbound/items`);
+      if (items.ok) setRawInboundItems(await items.json());
       form.reset();
     } catch (requestError) {
       setError(requestError instanceof Error ? requestError.message : "운영 파일을 등록하지 못했습니다.");
@@ -672,18 +686,19 @@ export default function Home() {
     setIsInitialScheduleModalOpen(true);
   }
 
-  async function createSchedule() {
+  async function createSchedule(mode = planningMode) {
     if (!planningRunId) return;
     setError("");
     try {
       const conditions = planningRangeDates.flatMap((planned_date) => lineSpecifications.map((line) => ({ planned_date, line_code: line.code, ...(initialScheduleConditions[`${planned_date}__${line.code}`] ?? { operation_status: "가동", downtime_hours: 0 }) })));
-      const response = await fetch(`${API_URL}/scheduler/runs/${planningRunId}`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ conditions }) });
+      const response = await fetch(`${API_URL}/scheduler/runs/${planningRunId}`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ conditions, planning_mode: mode }) });
       const result = await response.json();
       if (!response.ok) throw new Error(result.detail ?? "생산 스케줄을 만들지 못했습니다.");
       setScheduleItems(result.items);
       setScheduleShortages(result.shortages);
       setScheduleRunId(result.id);
       setScheduleMeta(result);
+      setPlanningMode(result.planning_mode ?? mode);
       setRawMaterialBalances([]);
       setIsRequirementModalOpen(false);
       setIsInitialScheduleModalOpen(false);
@@ -695,7 +710,32 @@ export default function Home() {
     }
   }
 
+  async function uploadInboundAndRecalculate(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    const file = rawInboundAlertInputRef.current?.files?.[0];
+    if (!file) { setError("변경된 원료 입고계획 Excel 파일을 선택해 주세요."); return; }
+    setError("");
+    const body = new FormData();
+    body.append("file", file);
+    try {
+      const response = await fetch(`${API_URL}/inventories/raw-inbound/imports?merge=true`, { method: "POST", body });
+      const result = await response.json();
+      if (!response.ok) throw new Error(result.detail ?? "원료 입고계획을 등록하지 못했습니다.");
+      setRawInboundImport(result);
+      const items = await fetch(`${API_URL}/inventories/raw-inbound/items`);
+      if (items.ok) setRawInboundItems(await items.json());
+      await createSchedule("원료 제약 반영");
+      setMessage("변경된 원료 입고계획을 적용해 원료 제약 생산계획을 다시 계산했습니다.");
+    } catch (requestError) {
+      setError(requestError instanceof Error ? requestError.message : "원료 입고계획을 적용하지 못했습니다.");
+    }
+  }
+
   async function downloadScheduleExcel() {
+    if (scheduleMeta?.status !== "확정") {
+      setError("Excel 다운로드는 확정된 생산계획 버전에서만 할 수 있습니다.");
+      return;
+    }
     if (!scheduleRunId) return;
     setError("");
     try {
@@ -708,7 +748,7 @@ export default function Home() {
       const url = URL.createObjectURL(blob);
       const link = document.createElement("a");
       link.href = url;
-      link.download = `production_schedule_${scheduleRunId}.xlsx`;
+      link.download = `confirmed_production_plan_${scheduleRunId}.xlsx`;
       link.click();
       URL.revokeObjectURL(url);
     } catch (requestError) {
@@ -834,6 +874,7 @@ export default function Home() {
           <h2>계획 경고 및 알림</h2>
           <div className="dashboard-alert-grid">{dashboardAlerts.map((alert) => <div key={alert.label} className={`dashboard-alert ${alert.tone} ${alert.details.length ? "has-details" : ""}`}><div className="dashboard-alert-summary"><span>{alert.label}</span><strong>{alert.value}</strong>{alert.description && <p>{alert.description}</p>}</div>{alert.details.length > 0 && <ul className="dashboard-alert-details">{alert.details.map((detail) => <li key={detail}>{detail}</li>)}</ul>}</div>)}</div>
         </section>
+        {rawSupplyRisks.length > 0 && <section className="raw-resupply-alert"><div><h2>원료 추가 수급 및 생산 재계산 필요</h2><p>{scheduleMeta?.planning_mode === "원료 제약 반영" ? "원료 재고·입고계획 제약을 반영한 결과입니다. 변경된 입고계획을 등록하면 같은 기준월로 생산량을 다시 최적화합니다." : "현재 계획에서 원료 부족이 예상됩니다. 변경된 입고계획을 등록하면 원료 제약 반영 방식으로 생산량을 다시 최적화합니다."}</p><ul>{scheduleShortages.filter((item) => item.unallocated_quantity_ton > 0).slice(0, 5).map((item) => <li key={`shortage-${item.id}`}>{item.product_code} 제품 {item.unallocated_quantity_ton.toFixed(1)}톤 미배정</li>)}{!scheduleShortages.some((item) => item.unallocated_quantity_ton > 0) && rawSupplyRisks.slice(0, 5).map((risk) => <li key={`${risk.material}-${risk.day}`}>{Number(risk.day.slice(5, 7))}월 {Number(risk.day.slice(8, 10))}일 {risk.material} 원료 {formatDashboardNumber(risk.quantity)}톤 부족 예상</li>)}</ul></div><form onSubmit={uploadInboundAndRecalculate}><label>변경된 원료 입고계획 Excel<input ref={rawInboundAlertInputRef} type="file" accept=".xlsx" required /></label><button type="submit">입고계획 적용 후 재계산</button></form></section>}
         <h2>{planningYear}년 {planningMonth}월 판매/생산 Summary</h2>
         <div className="dashboard-summary-grid">
           <div><h3>월별 판매량</h3><div className="table-wrap summary-table"><table><thead><tr><th>고객사</th><th>제품</th><th>판매량</th></tr></thead><tbody>{dashboardSalesRows.map((row) => <tr key={`${row.customer}-${row.product}`}>{row.customerSpan > 0 && <td rowSpan={row.customerSpan}>{row.customer}</td>}<td>{row.product}</td><td>{row.quantity.toFixed(1)}</td></tr>)}{!dashboardSalesRows.length && <tr><td colSpan={3}>판매계획이 없습니다.</td></tr>}</tbody></table></div></div>
@@ -848,14 +889,13 @@ export default function Home() {
         <div className="table-wrap summary-spec-table dashboard-spec-table"><table><thead><tr><th>공장</th><th>라인</th><th>역시간</th><th>휴지시간</th><th>작업가능시간</th><th>순작업시간</th><th>가동률(%)</th><th>작업률(%)</th></tr></thead><tbody>{dashboardCalcinationSpecs.map((line) => <tr key={line.code}>{line.plantSpan > 0 && <td rowSpan={line.plantSpan}>{line.plant_name}</td>}<td>{line.name}</td><td>{formatDashboardNumber(line.calendarHours)}</td><td>{formatDashboardNumber(line.downtime)}</td><td>{formatDashboardNumber(line.available)}</td><td>{formatDashboardNumber(line.available)}</td><td>{line.utilization ? `${formatDashboardNumber(line.utilization)}%` : "-"}</td><td>{line.operating_efficiency ? `${formatDashboardNumber(line.operating_efficiency * 100)}%` : "-"}</td></tr>)}{!dashboardCalcinationSpecs.length && <tr><td colSpan={8}>소성공정 제원치가 없습니다.</td></tr>}</tbody></table></div>
       </section>
       {isRequirementModalOpen && <div className="modal-backdrop" role="presentation" onMouseDown={() => setIsRequirementModalOpen(false)}><section className="requirement-modal" role="dialog" aria-modal="true" aria-labelledby="requirement-modal-title" onMouseDown={(event) => event.stopPropagation()}><div className="requirement-modal-header"><div><h2 id="requirement-modal-title">월별 필요 생산량</h2><p>{planningYear}년 {planningMonth}월 ~ {planningEndYear}년 {planningEndMonth}월 기준</p></div><button type="button" className="modal-close-button" aria-label="팝업 닫기" onClick={() => setIsRequirementModalOpen(false)}>×</button></div><p>필요 생산량 = 판매계획 − 출하가능 재고 + 안전재고 목표량입니다.</p><div className="table-wrap requirement-modal-table"><table><thead><tr><th>제품</th><th>판매계획(t)</th><th>출하가능 재고(t)</th><th>안전일수</th><th>구간 평균 일판매(t)</th><th>안전재고 목표(t)</th><th>필요 생산량(t)</th></tr></thead><tbody>{requirements.map((item) => <tr key={item.id}><td>{item.product_code}</td><td>{item.sales_demand_ton.toLocaleString()}</td><td>{item.available_inventory_ton.toLocaleString()}</td><td>{item.safety_stock_days.toLocaleString()}</td><td>{item.average_daily_sales_ton.toFixed(2)}</td><td>{item.safety_stock_target_ton.toFixed(2)}</td><td><strong>{item.required_production_ton.toFixed(2)}</strong></td></tr>)}{!requirements.length && <tr><td colSpan={7}>계산된 필요 생산량이 없습니다.</td></tr>}</tbody></table></div><div className="requirement-modal-actions"><button type="button" className="scheduler-button" disabled={!planningRunId} onClick={openInitialScheduleModal}>라인·일자별 초기 스케줄 생성</button></div></section></div>}
-      {isInitialScheduleModalOpen && <div className="modal-backdrop" role="presentation" onMouseDown={() => setIsInitialScheduleModalOpen(false)}><section className="requirement-modal initial-schedule-modal" role="dialog" aria-modal="true" aria-labelledby="initial-schedule-modal-title" onMouseDown={(event) => event.stopPropagation()}><div className="requirement-modal-header"><div><h2 id="initial-schedule-modal-title">라인·일자별 설비 가동계획</h2><p>가동여부와 휴지시간(0~24시간)을 입력한 뒤 초기 스케줄을 생성하세요.</p></div><div className="initial-schedule-header-actions"><button type="button" className="scheduler-button" onClick={createSchedule}>라인·일자별 초기 스케줄 생성</button><button type="button" className="modal-close-button" aria-label="팝업 닫기" onClick={() => setIsInitialScheduleModalOpen(false)}>×</button></div></div><div className="table-wrap initial-schedule-table"><table><thead><tr><th rowSpan={2}>일자</th><th rowSpan={2}>요일</th>{initialScheduleLines.map((line) => <th colSpan={2} key={line.code} className="plant-header">{line.name}</th>)}</tr><tr>{initialScheduleLines.flatMap((line) => [<th key={`${line.code}-status`}>가동여부</th>, <th key={`${line.code}-downtime`}>휴지시간</th>])}</tr></thead><tbody>{planningRangeDates.map((day) => { const weekday = new Date(`${day}T00:00:00`).toLocaleDateString("ko-KR", { weekday: "short" }); return <tr key={day}><td>{day.slice(2).replaceAll("-", ".")}</td><td className={weekday === "토" ? "saturday" : weekday === "일" ? "sunday" : ""}>{weekday}</td>{initialScheduleLines.flatMap((line) => { const key = `${day}__${line.code}`; const condition = initialScheduleConditions[key] ?? { operation_status: "가동", downtime_hours: 0 }; const update = (changes: Partial<typeof condition>) => setInitialScheduleConditions((rows) => ({ ...rows, [key]: { ...condition, ...changes } })); return [<td key={`${key}-status`}><select className="cell-select" value={condition.operation_status} onChange={(event) => update({ operation_status: event.target.value })}><option value="가동">가동</option><option value="휴지">휴지</option><option value="중수리">중수리</option><option value="대수리">대수리</option><option value="정전">정전</option></select></td>, <td key={`${key}-downtime`}><input className="cell-input" type="number" min="0" max="24" step="0.1" value={condition.downtime_hours} onChange={(event) => update({ downtime_hours: Math.min(24, Math.max(0, Number(event.target.value))) })}/></td>]; })}</tr>; })}</tbody></table></div></section></div>}
+      {isInitialScheduleModalOpen && <div className="modal-backdrop" role="presentation" onMouseDown={() => setIsInitialScheduleModalOpen(false)}><section className="requirement-modal initial-schedule-modal" role="dialog" aria-modal="true" aria-labelledby="initial-schedule-modal-title" onMouseDown={(event) => event.stopPropagation()}><div className="requirement-modal-header"><div><h2 id="initial-schedule-modal-title">라인·일자별 설비 가동계획</h2><p>가동여부와 휴지시간(0~24시간)을 입력한 뒤 초기 스케줄을 생성하세요.</p></div><div className="initial-schedule-header-actions"><button type="button" className="scheduler-button" onClick={() => createSchedule()}>라인·일자별 초기 스케줄 생성</button><button type="button" className="modal-close-button" aria-label="팝업 닫기" onClick={() => setIsInitialScheduleModalOpen(false)}>×</button></div></div><label className="planning-mode-picker">계획 방식<select value={planningMode} onChange={(event) => setPlanningMode(event.target.value)}><option value="판매 목표 우선">판매 목표 우선 · 부족은 경고로 표시</option><option value="원료 제약 반영">원료 제약 반영 · 재고가 없으면 생산 중단</option></select></label><div className="table-wrap initial-schedule-table"><table><thead><tr><th rowSpan={2}>일자</th><th rowSpan={2}>요일</th>{initialScheduleLines.map((line) => <th colSpan={2} key={line.code} className="plant-header">{line.name}</th>)}</tr><tr>{initialScheduleLines.flatMap((line) => [<th key={`${line.code}-status`}>가동여부</th>, <th key={`${line.code}-downtime`}>휴지시간</th>])}</tr></thead><tbody>{planningRangeDates.map((day) => { const weekday = new Date(`${day}T00:00:00`).toLocaleDateString("ko-KR", { weekday: "short" }); return <tr key={day}><td>{day.slice(2).replaceAll("-", ".")}</td><td className={weekday === "토" ? "saturday" : weekday === "일" ? "sunday" : ""}>{weekday}</td>{initialScheduleLines.flatMap((line) => { const key = `${day}__${line.code}`; const condition = initialScheduleConditions[key] ?? { operation_status: "가동", downtime_hours: 0 }; const update = (changes: Partial<typeof condition>) => setInitialScheduleConditions((rows) => ({ ...rows, [key]: { ...condition, ...changes } })); return [<td key={`${key}-status`}><select className="cell-select" value={condition.operation_status} onChange={(event) => update({ operation_status: event.target.value })}><option value="가동">가동</option><option value="휴지">휴지</option><option value="중수리">중수리</option><option value="대수리">대수리</option><option value="정전">정전</option></select></td>, <td key={`${key}-downtime`}><input className="cell-input" type="number" min="0" max="24" step="0.1" value={condition.downtime_hours} onChange={(event) => update({ downtime_hours: Math.min(24, Math.max(0, Number(event.target.value))) })}/></td>]; })}</tr>; })}</tbody></table></div></section></div>}
       {(view === "planning" || view === "schedule" || view === "monthly" || view === "daily" || view === "production-monthly" || view === "production-daily") && <section className="card planning-card">
-        {scheduleMeta && <div className="version-bar"><strong>V{scheduleMeta.version} · {scheduleMeta.status === "검토 중" ? "저장" : scheduleMeta.status}</strong><span>{scheduleMeta.change_reason}</span>{scheduleMeta.status !== "확정" && <><button onClick={()=>setScheduleStatus("저장")}>저장</button><button onClick={()=>setScheduleStatus("확정")}>확정</button></>}<button onClick={copyScheduleVersion}>새 버전 복사</button></div>}
+        {scheduleMeta && <div className="version-bar"><strong>V{scheduleMeta.version} · {scheduleMeta.status === "검토 중" ? "저장" : scheduleMeta.status}</strong><span>{scheduleMeta.change_reason}</span>{scheduleRunId && <button type="button" className="schedule-export-button" onClick={downloadScheduleExcel} disabled={scheduleMeta.status !== "확정"} title={scheduleMeta.status !== "확정" ? "확정된 생산계획 버전만 다운로드할 수 있습니다." : "판매계획·생산계획·제원치·제품재고·원료재고를 Excel로 다운로드합니다."}>{scheduleMeta.status === "확정" ? "확정본 전체 Excel 다운로드" : "확정 후 Excel 다운로드"}</button>}</div>}
         {scheduleShortages.length > 0 && <div className="table-wrap"><h3>제품별 배정 결과</h3><table><thead><tr><th>제품</th><th>필요 생산량(t)</th><th>배정량(t)</th><th>미배정량(t)</th></tr></thead><tbody>{scheduleShortages.map((item) => <tr key={item.id}><td>{item.product_code}</td><td>{item.required_quantity_ton.toFixed(2)}</td><td>{item.scheduled_quantity_ton.toFixed(2)}</td><td>{item.unallocated_quantity_ton.toFixed(2)}</td></tr>)}</tbody></table></div>}
         {scheduleItems.length > 0 && <div className="table-wrap"><h3>일자·라인별 생산 스케줄 조정</h3><p>일자·제품·생산량을 수정한 뒤 저장하세요. 고정하면 확정 대상으로 표시되며, 변경 사유도 함께 남길 수 있습니다.</p><table><thead><tr><th>일자</th><th>공장</th><th>라인</th><th>제품</th><th>생산계획(t)</th><th>가용능력(t)</th><th>정비</th><th>전환</th><th>고정</th><th>변경 사유</th><th>저장</th></tr></thead><tbody>{scheduleItems.map((item) => <tr key={item.id} className={item.is_locked ? "locked-row" : ""}><td><input className="table-input" type="date" value={item.planned_date} onChange={(event) => changeScheduleItem(item.id, { planned_date: event.target.value })} /></td><td>{item.plant_name}</td><td>{item.line_name}</td><td><input className="table-input product-input" value={item.product_code} onChange={(event) => changeScheduleItem(item.id, { product_code: event.target.value.toUpperCase() })} /></td><td><input className="table-input quantity-input" type="number" min="0.01" step="0.01" value={item.planned_quantity_ton} onChange={(event) => changeScheduleItem(item.id, { planned_quantity_ton: Number(event.target.value) })} /></td><td>{item.available_capacity_ton.toFixed(2)}</td><td>{item.downtime_hours.toFixed(1)}h</td><td>{item.changeover_hours.toFixed(1)}h</td><td><input type="checkbox" checked={item.is_locked} onChange={(event) => changeScheduleItem(item.id, { is_locked: event.target.checked })} /></td><td><input className="table-input note-input" value={item.adjustment_note} placeholder="예: 고객 요청" onChange={(event) => changeScheduleItem(item.id, { adjustment_note: event.target.value })} /></td><td><button type="button" className="small-button" onClick={() => saveScheduleItem(item)}>저장</button></td></tr>)}</tbody></table></div>}
         {scheduleItems.length > 0 && <section className="dashboard"><h3>스케줄 요약</h3><div className="metrics"><div><span>계획 생산량</span><strong>{scheduleItems.reduce((sum, item) => sum + item.planned_quantity_ton, 0).toFixed(1)} t</strong></div><div><span>CAPA 사용률</span><strong>{((scheduleItems.reduce((sum, item) => sum + item.planned_quantity_ton, 0) / Math.max(scheduleItems.reduce((sum, item) => sum + item.available_capacity_ton, 0), 1)) * 100).toFixed(1)}%</strong></div><div><span>사용 라인</span><strong>{new Set(scheduleItems.map((item) => item.line_code)).size} 개</strong></div><div><span>미배정 생산량</span><strong>{scheduleShortages.reduce((sum, item) => sum + item.unallocated_quantity_ton, 0).toFixed(1)} t</strong></div></div><div className="product-bars">{scheduleShortages.map((item) => <div key={item.id}><span>{item.product_code}</span><div><i style={{ width: `${Math.min(100, item.required_quantity_ton ? item.scheduled_quantity_ton / item.required_quantity_ton * 100 : 0)}%` }} /></div><em>{item.scheduled_quantity_ton.toFixed(1)} / {item.required_quantity_ton.toFixed(1)} t</em></div>)}</div></section>}
         {scheduleRunId && <button className="validation-button" onClick={validateRawMaterials}>BOM·원료재고·입고계획 검증</button>}
-        {scheduleRunId && <button className="export-button" onClick={downloadScheduleExcel}>생산 스케줄 Excel 다운로드</button>}
         {rawMaterialBalances.length > 0 && <div className="table-wrap"><h3>원료 가용성 검증 결과</h3><p>입고량을 먼저 더하고, 당일 생산에 필요한 BOM 원료를 차감합니다. 부족량이 0보다 크면 해당 날짜에 원료가 부족합니다.</p><table><thead><tr><th>일자</th><th>공장</th><th>원료</th><th>기초 재고(t)</th><th>입고(t)</th><th>BOM 소요량(t)</th><th>기말 재고(t)</th><th>부족량(t)</th></tr></thead><tbody>{rawMaterialBalances.map((item) => <tr className={item.shortage_quantity_ton > 0 ? "shortage-row" : ""} key={item.id}><td>{item.balance_date}</td><td>{item.plant_name}</td><td>{item.material_code}</td><td>{item.opening_quantity_ton.toFixed(2)}</td><td>{item.inbound_quantity_ton.toFixed(2)}</td><td>{item.required_quantity_ton.toFixed(2)}</td><td>{item.ending_quantity_ton.toFixed(2)}</td><td><strong>{item.shortage_quantity_ton.toFixed(2)}</strong></td></tr>)}</tbody></table></div>}
       </section>}
       {view === "production-monthly" && <section className="card production-monthly-panel"><label className="plant-picker">조회 공장<select value={dailyPlantFilter} onChange={(event) => setDailyPlantFilter(event.target.value)}><option value="all">전체 공장</option>{[...new Set(groupedProductionRows.map((row) => row.plant))].map((plant) => <option key={plant}>{plant}</option>)}</select></label><h2>{planningYear}년 {planningMonth}월 생산계획</h2><div className="table-wrap reference-table"><table><thead><tr><th>공장</th><th>공정</th><th>라인</th><th>반제품코드</th>{planPeriods.map((period) => <th key={period}>{period}</th>)}<th>구간 합계(t)</th></tr></thead><tbody>{groupedProductionRows.filter((row) => dailyPlantFilter === "all" || row.plant === dailyPlantFilter).map((row) => <tr key={`${row.plant}-${row.process}-${row.line}-${row.product}`}>{row.plantSpan > 0 && <td rowSpan={row.plantSpan}>{row.plant}</td>}{row.processSpan > 0 && <td rowSpan={row.processSpan}>{row.process}</td>}{row.lineSpan > 0 && <td rowSpan={row.lineSpan}>{row.line}</td>}<td>{row.product}</td>{planPeriods.map((period) => <td key={period}>{row.values[period] ? row.values[period].toFixed(1) : "-"}</td>)}<td className="total-cell">{Object.values(row.values).reduce((sum, value) => sum + value, 0).toFixed(1)}</td></tr>)}{!groupedProductionRows.length && <tr><td colSpan={8}>생성된 생산계획이 없습니다.</td></tr>}</tbody></table></div><h2>월별 제품입고량 (P 공정)</h2><div className="table-wrap reference-table"><table><thead><tr><th>반제품코드</th>{planPeriods.map((period) => <th key={period}>{period}</th>)}<th>구간 합계(t)</th></tr></thead><tbody>{productInboundRows.map((row) => <tr key={row.product}><td>{row.product}</td>{planPeriods.map((period) => <td key={period}>{row.values[period] ? row.values[period].toFixed(1) : "-"}</td>)}<td className="total-cell">{Object.values(row.values).reduce((sum, value) => sum + value, 0).toFixed(1)}</td></tr>)}{!productInboundRows.length && <tr><td colSpan={5}>P 공정에서 생성된 제품 입고량이 없습니다.</td></tr>}</tbody></table></div></section>}

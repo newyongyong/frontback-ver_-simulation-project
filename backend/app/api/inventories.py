@@ -16,11 +16,11 @@ from app.services.operations_importer import import_raw_inbound
 router = APIRouter(prefix="/inventories", tags=["inventories"])
 
 
-async def _import(file: UploadFile, db: Session, importer):
+async def _import(file: UploadFile, db: Session, importer, **options):
     if not file.filename or not file.filename.lower().endswith(".xlsx"):
         raise HTTPException(status_code=400, detail=".xlsx 형식의 재고 파일만 업로드할 수 있습니다.")
     try:
-        return importer(db, file.filename, await file.read())
+        return importer(db, file.filename, await file.read(), **options)
     except ValueError as error:
         db.rollback()
         raise HTTPException(status_code=400, detail=str(error)) from error
@@ -40,8 +40,8 @@ async def upload_raw_inventory(file: UploadFile = File(...), db: Session = Depen
 
 
 @router.post("/raw-inbound/imports", response_model=InventoryImportResponse, status_code=status.HTTP_201_CREATED)
-async def upload_raw_inbound(file: UploadFile = File(...), db: Session = Depends(get_db)):
-    return await _import(file, db, import_raw_inbound)
+async def upload_raw_inbound(merge: bool = False, file: UploadFile = File(...), db: Session = Depends(get_db)):
+    return await _import(file, db, import_raw_inbound, merge=merge)
 
 
 def _latest_import_id(db: Session, kind: str) -> int | None:

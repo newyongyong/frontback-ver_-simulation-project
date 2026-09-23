@@ -16,6 +16,7 @@ class ScheduleRun(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.now)
     version: Mapped[int] = mapped_column(default=1)
     status: Mapped[str] = mapped_column(String(20), default="작성 중")
+    planning_mode: Mapped[str] = mapped_column(String(30), default="판매 목표 우선")
     change_reason: Mapped[str] = mapped_column(String(500), default="")
     confirmed_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
 

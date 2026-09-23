@@ -76,7 +76,6 @@ main { max-width: none; width: 100%; margin: 0; padding: 14px 32px 14px 280px; }
 .view-production-daily .planning-form { grid-template-columns:120px 100px minmax(0, 1fr); }
 .view-production-daily .planning-form button { width:30%; justify-self:start; }
 .view-production-daily .planning-card > .table-wrap:not(:first-of-type),
-.view-production-daily .planning-card > .version-bar,
 .view-production-daily .planning-card > .dashboard,
 .view-production-daily .planning-card > .validation-button,
 .view-production-daily .planning-card > .export-button { display:none; }
@@ -157,6 +156,7 @@ button:hover { background: #0f5791; }
 .version-bar { display:flex; align-items:center; gap:10px; padding:12px; margin-top:16px; background:#eef4fb; border-radius:8px; }
 .version-bar span { flex:1; color:#5d6778; font-size:13px; }
 .version-bar button { padding:7px 10px; font-size:13px; }
+.version-bar .schedule-export-button { background:#bd7015; }.version-bar .schedule-export-button:hover { background:#95570c; }.version-bar .schedule-export-button:disabled { background:#b9c1c9; cursor:not-allowed; opacity:.8; }
 .scheduler-settings { display: grid; grid-template-columns: 1fr 140px auto; gap: 10px; margin-top: 16px; }
 .scheduler-settings h3, .scheduler-settings p { grid-column: 1 / -1; margin: 0; }
 .dashboard { margin-top: 18px; padding: 18px; background: #f5f8fc; border-radius: 10px; }
@@ -177,6 +177,7 @@ button:hover { background: #0f5791; }
 .dashboard-alert span { display:block; font-size:13px; font-weight:700; }.dashboard-alert strong { display:block; margin-top:8px; font-size:24px; }.dashboard-alert p { margin:8px 0 0; font-size:12px; line-height:1.4; }
 .dashboard-alert.has-details { display:grid; grid-template-columns:minmax(100px, 31%) minmax(0, 1fr); gap:12px; }.dashboard-alert-details { display:grid; grid-template-columns:repeat(2, minmax(0, 1fr)); align-content:start; gap:8px 14px; margin:0; padding:0; list-style:none; font-size:16px; font-weight:700; line-height:1.4; }.dashboard-alert-details li { display:block; min-height:0; padding:0; border:0; color:inherit; white-space:nowrap; }
 .dashboard-alert.safe { border-color:#b9ddc3; background:#f0f9f2; color:#1c6c38; }.dashboard-alert.warning { border-color:#efd489; background:#fff9e9; color:#80610b; }.dashboard-alert.danger { border-color:#edbbbb; background:#fff1f1; color:#a32c2c; }
+.raw-resupply-alert { display:grid; grid-template-columns:minmax(0, 1fr) minmax(320px, .75fr); gap:20px; margin:0 0 24px; padding:16px; border:1px solid #e5bd71; border-radius:10px; background:#fff8e7; color:#6d4c08; }.raw-resupply-alert h2 { margin:0 0 8px; font-size:20px; }.raw-resupply-alert p { margin:0; line-height:1.5; }.raw-resupply-alert ul { display:grid; gap:4px; margin:10px 0 0; padding:0; list-style:none; }.raw-resupply-alert li { display:block; min-height:0; padding:0; border:0; font-weight:700; }.raw-resupply-alert form { display:grid; grid-template-columns:1fr auto; align-content:center; gap:8px; }.raw-resupply-alert label { display:grid; gap:5px; font-size:13px; font-weight:700; }.raw-resupply-alert input { padding:7px; background:#fff; }.raw-resupply-alert button { align-self:end; background:#a46a09; white-space:nowrap; }.planning-mode-picker { display:grid; grid-template-columns:100px minmax(0, 420px); align-items:center; gap:10px; margin:14px 0 0; font-weight:700; }.planning-mode-picker select { padding:9px; }
 .metrics { display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; }
 .metrics div { padding: 12px; background: white; border: 1px solid #e4e8ef; border-radius: 8px; }
 .metrics span, .product-bars span { display: block; color: #5d6778; font-size: 13px; }
@@ -243,4 +244,4 @@ thead tr:nth-child(3) th { top: 78px; z-index: 4; }
 .upload-preview-table th, .upload-preview-table td { white-space:nowrap; }
 .increase, .increase-row td:last-child, .increase-row td:nth-last-child(2) { color:#16733a; }
 .decrease, .decrease-row td:last-child, .decrease-row td:nth-last-child(2) { color:#b23a3a; }
-@media (max-width: 760px) { main { padding: 20px; } .planning-sidebar { position:static; width:auto; margin-bottom:16px; } .view-production-monthly .plant-picker { max-width:100%; } .schedule-editor-header, .schedule-editor-actions { display:grid; grid-template-columns:1fr; } form, .scheduler-settings, .metrics, .dashboard-summary-grid, .dashboard-alert-grid, .spec-layout, .inventory-layout, .raw-layout, .sales-comparison-files, .comparison-file-fields { grid-template-columns: 1fr; } .dashboard-spec-table { width:100%; } .sales-comparison-files { gap:18px; } .export-button { margin-left: 0; } .product-bars > div { grid-template-columns: 1fr; } .product-bars em { text-align: left; } }
+@media (max-width: 760px) { main { padding: 20px; } .planning-sidebar { position:static; width:auto; margin-bottom:16px; } .view-production-monthly .plant-picker { max-width:100%; } .schedule-editor-header, .schedule-editor-actions { display:grid; grid-template-columns:1fr; } form, .scheduler-settings, .metrics, .dashboard-summary-grid, .dashboard-alert-grid, .raw-resupply-alert, .spec-layout, .inventory-layout, .raw-layout, .sales-comparison-files, .comparison-file-fields { grid-template-columns: 1fr; } .planning-mode-picker { grid-template-columns:1fr; }.raw-resupply-alert form { grid-template-columns:1fr; } .dashboard-spec-table { width:100%; } .sales-comparison-files { gap:18px; } .export-button { margin-left: 0; } .product-bars > div { grid-template-columns: 1fr; } .product-bars em { text-align: left; } }

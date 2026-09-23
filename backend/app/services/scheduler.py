@@ -3,19 +3,25 @@
 from __future__ import annotations
 
 from calendar import monthrange
+from collections import defaultdict
 from datetime import date
+from math import floor
 from typing import Any
 
+from ortools.sat.python import cp_model
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.models.master_import import MasterImport, MasterRecord
 from app.models.operations import MaintenanceImport, MaintenanceSchedule
-from app.models.planning_master import LineProduct, Plant, ProductionLine, ProductQualitySpec
+from app.models.planning_master import BomItem, LineProduct, Plant, ProductionLine, ProductQualitySpec
 from app.models.planning_run import PlanningRun, ProductionRequirement
 from app.models.schedule import ProductionScheduleItem, ScheduleChangeHistory, ScheduleRun, SchedulerSetting, UnscheduledRequirement, WorkCalendarDay
 from app.models.production_actual import ProductionActualImport, ProductionActualItem
 from app.models.active_source import ActiveDataSource
+from app.models.inventory import InventoryImport, RawInventoryItem
+from app.models.operations import RawInboundItem
+from app.services.raw_material_validator import _bom_by_product, _leaf_material_requirements, _plant_key, _latest_import_id
 
 
 def _text(value: Any) -> str:
@@ -85,7 +91,7 @@ def _changeover_hours(db: Session) -> float:
     return settings.changeover_hours if settings else 0.0
 
 
-def create_schedule_run(db: Session, planning_run_id: int, initial_conditions: list[Any] | None = None) -> tuple[ScheduleRun, list[ProductionScheduleItem], list[UnscheduledRequirement]]:
+def create_schedule_run(db: Session, planning_run_id: int, initial_conditions: list[Any] | None = None, planning_mode: str = "판매 목표 우선") -> tuple[ScheduleRun, list[ProductionScheduleItem], list[UnscheduledRequirement]]:
     planning_run = db.get(PlanningRun, planning_run_id)
     if not planning_run:
         raise ValueError("필요 생산량 계산 이력을 찾을 수 없습니다.")
@@ -105,7 +111,10 @@ def create_schedule_run(db: Session, planning_run_id: int, initial_conditions: l
     downtime = _downtime_lookup(db)
     custom_conditions = {(item.planned_date, item.line_code): item for item in initial_conditions or []}
 
-    run = ScheduleRun(planning_run_id=planning_run_id)
+    if planning_mode == "원료 제약 반영":
+        return _create_raw_constrained_schedule_run(db, planning_run, requirements, lines, line_products, plants, specs, downtime, custom_conditions)
+
+    run = ScheduleRun(planning_run_id=planning_run_id, planning_mode=planning_mode)
     db.add(run)
     db.flush()
     days = _working_days_in_range(db, planning_run.year, planning_run.month, planning_run.end_year, planning_run.end_month)
@@ -180,6 +189,140 @@ def create_schedule_run(db: Session, planning_run_id: int, initial_conditions: l
         db.refresh(item)
     for shortage in shortages:
         db.refresh(shortage)
+    return run, items, shortages
+
+
+def _create_raw_constrained_schedule_run(
+    db: Session,
+    planning_run: PlanningRun,
+    requirements: list[ProductionRequirement],
+    lines: list[ProductionLine],
+    line_products: list[LineProduct],
+    plants: dict[str, str],
+    specs: dict[str, tuple[float, float]],
+    downtime: dict[tuple[date, str, str], float],
+    custom_conditions: dict[tuple[date, str], Any],
+) -> tuple[ScheduleRun, list[ProductionScheduleItem], list[UnscheduledRequirement]]:
+    """OR-Tools CP-SAT으로 원료 재고를 초과하지 않는 실행 가능 스케줄을 만든다."""
+    raw_import_id, inbound_import_id = _latest_import_id(db, "raw"), _latest_import_id(db, "raw_inbound")
+    if raw_import_id is None or inbound_import_id is None:
+        raise ValueError("원료 제약 반영 계획에는 원료 재고와 원료 입고계획 Excel이 모두 필요합니다.")
+
+    bom_by_product, bom_by_output = _bom_by_product(db)
+    product_materials: dict[str, dict[str, float]] = {}
+    for requirement in requirements:
+        recipe = bom_by_product.get(requirement.product_code)
+        if not recipe:
+            raise ValueError(f"{requirement.product_code} 제품의 BOM을 찾을 수 없습니다.")
+        materials: dict[str, float] = defaultdict(float)
+        for material, quantity in _leaf_material_requirements(recipe[0], 1.0, bom_by_output):
+            materials[material] += quantity
+        product_materials[requirement.product_code] = dict(materials)
+
+    days = _working_days_in_range(db, planning_run.year, planning_run.month, planning_run.end_year, planning_run.end_month)
+    if not days:
+        raise ValueError("근무일 캘린더에 생산 가능한 날짜가 없습니다.")
+    products_by_line: dict[str, list[str]] = defaultdict(list)
+    for item in line_products:
+        products_by_line[item.line_code].append(item.product_code)
+    scale = 10  # 0.1톤 단위로 정수화하여 CP-SAT에 전달한다.
+    material_scale = 1000
+    model = cp_model.CpModel()
+    quantity_vars: dict[tuple[date, str, str], tuple[Any, float, float, str, str, float, float, str]] = {}
+    line_day_vars: dict[tuple[date, str], list[Any]] = defaultdict(list)
+
+    for current_day in days:
+        for line in lines:
+            condition = custom_conditions.get((current_day, line.code))
+            plant_name = plants.get(line.plant_code, line.plant_code)
+            downtime_hours = min(24.0, max(0.0, condition.downtime_hours if condition else downtime.get((current_day, plant_name, line.name), 0.0)))
+            if condition and condition.operation_status != "가동":
+                downtime_hours = 24.0
+            for requirement in requirements:
+                choices = [specs[code] for code in products_by_line[line.code] if _family(code) == requirement.product_code and code in specs and specs[code][0] > 0]
+                if not choices:
+                    continue
+                hourly_rate, yield_rate = max(choices, key=lambda choice: choice[0] * choice[1])
+                capacity = max(0.0, 24.0 - downtime_hours) * hourly_rate * (line.operating_efficiency or 1.0) * yield_rate
+                if capacity <= 0:
+                    continue
+                upper = max(0, floor(capacity * scale + 1e-8))
+                variable = model.new_int_var(0, upper, f"q_{current_day}_{line.code}_{requirement.product_code}")
+                active = model.new_bool_var(f"run_{current_day}_{line.code}_{requirement.product_code}")
+                model.add(variable <= upper * active)
+                key = (current_day, line.code, requirement.product_code)
+                quantity_vars[key] = (variable, capacity, downtime_hours, plant_name, line.name, hourly_rate, yield_rate, condition.operation_status if condition else "가동")
+                line_day_vars[(current_day, line.code)].append(active)
+    for active_vars in line_day_vars.values():
+        model.add(sum(active_vars) <= 1)
+    if not quantity_vars:
+        raise ValueError("원료 제약 계획에 사용할 수 있는 라인 CAPA가 없습니다.")
+
+    requirement_units = {item.product_code: max(0, floor(item.required_production_ton * scale + 1e-8)) for item in requirements}
+    for product_code, required in requirement_units.items():
+        variables = [row[0] for (day, line, product), row in quantity_vars.items() if product == product_code]
+        if variables:
+            model.add(sum(variables) <= required)
+
+    raw_items = list(db.scalars(select(RawInventoryItem).where(RawInventoryItem.inventory_import_id == raw_import_id)))
+    inbound_items = list(db.scalars(select(RawInboundItem).where(RawInboundItem.inventory_import_id == inbound_import_id)))
+    used_keys = {(plants.get(line.plant_code, line.plant_code), material) for line in lines for material in {material for values in product_materials.values() for material in values}}
+    first_day = min(days)
+    opening: dict[tuple[str, str], float] = {}
+    opening_dates: dict[tuple[str, str], date] = {}
+    for item in raw_items:
+        for plant_name, material in used_keys:
+            key = (plant_name, material)
+            if material != item.material_code or _plant_key(plant_name) != _plant_key(item.plant_name) or item.snapshot_date > first_day:
+                continue
+            if key not in opening_dates or item.snapshot_date > opening_dates[key]:
+                opening[key], opening_dates[key] = item.quantity_ton, item.snapshot_date
+    inbound_by_day: dict[tuple[date, str, str], float] = defaultdict(float)
+    for item in inbound_items:
+        for plant_name, material in used_keys:
+            if material == item.material_code and _plant_key(plant_name) == _plant_key(item.plant_name) and item.inbound_date <= max(days):
+                inbound_by_day[(item.inbound_date, plant_name, material)] += item.quantity_ton
+    all_days = [date.fromordinal(value) for value in range(min(days).toordinal(), max(days).toordinal() + 1)]
+    for plant_name, material in used_keys:
+        cumulative_vars: list[tuple[Any, int]] = []
+        available = opening.get((plant_name, material), 0.0)
+        for current_day in all_days:
+            available += inbound_by_day[(current_day, plant_name, material)]
+            for (planned_day, line_code, product), row in quantity_vars.items():
+                if planned_day != current_day or row[3] != plant_name:
+                    continue
+                ratio = product_materials[product].get(material, 0.0)
+                if ratio:
+                    cumulative_vars.append((row[0], max(1, round(ratio * material_scale))))
+            if cumulative_vars:
+                model.add(sum(variable * coefficient for variable, coefficient in cumulative_vars) <= max(0, floor(available * scale * material_scale + 1e-8)))
+
+    model.maximize(sum(row[0] for row in quantity_vars.values()))
+    solver = cp_model.CpSolver()
+    solver.parameters.max_time_in_seconds = 20
+    solver.parameters.num_search_workers = 8
+    if solver.solve(model) not in (cp_model.OPTIMAL, cp_model.FEASIBLE):
+        raise ValueError("원료 제약을 만족하는 생산계획을 찾지 못했습니다.")
+
+    run = ScheduleRun(planning_run_id=planning_run.id, planning_mode="원료 제약 반영")
+    db.add(run)
+    db.flush()
+    items: list[ProductionScheduleItem] = []
+    scheduled_by_product: dict[str, float] = defaultdict(float)
+    for (planned_day, line_code, product), row in quantity_vars.items():
+        quantity = solver.value(row[0]) / scale
+        if quantity <= 0:
+            continue
+        item = ProductionScheduleItem(schedule_run_id=run.id, planned_date=planned_day, plant_name=row[3], line_code=line_code, line_name=row[4], product_code=product, planned_quantity_ton=quantity, available_capacity_ton=row[1], downtime_hours=row[2], work_rate=next(line.operating_efficiency or 1.0 for line in lines if line.code == line_code), yield_rate=row[6], operation_status=row[7], changeover_hours=0.0)
+        db.add(item)
+        items.append(item)
+        scheduled_by_product[product] += quantity
+    shortages = [UnscheduledRequirement(schedule_run_id=run.id, product_code=item.product_code, required_quantity_ton=item.required_production_ton, scheduled_quantity_ton=scheduled_by_product[item.product_code], unallocated_quantity_ton=max(0.0, item.required_production_ton - scheduled_by_product[item.product_code])) for item in requirements]
+    db.add_all(shortages)
+    db.commit()
+    db.refresh(run)
+    for item in items + shortages:
+        db.refresh(item)
     return run, items, shortages
 
 

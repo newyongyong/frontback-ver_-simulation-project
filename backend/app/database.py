@@ -64,3 +64,5 @@ def ensure_planning_requirement_columns() -> None:
         for name, definition in {"version": "INTEGER NOT NULL DEFAULT 1", "status": "VARCHAR(20) NOT NULL DEFAULT '작성 중'", "change_reason": "VARCHAR(500) NOT NULL DEFAULT ''", "confirmed_at": "DATETIME"}.items():
             if name not in run_columns:
                 connection.exec_driver_sql(f"ALTER TABLE schedule_runs ADD COLUMN {name} {definition}")
+        if "planning_mode" not in run_columns:
+            connection.exec_driver_sql("ALTER TABLE schedule_runs ADD COLUMN planning_mode VARCHAR(30) NOT NULL DEFAULT '판매 목표 우선'")

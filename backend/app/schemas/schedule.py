@@ -41,6 +41,7 @@ class ScheduleRunResponse(BaseModel):
     shortages: list[UnscheduledRequirementResponse]
     version: int
     status: str
+    planning_mode: str
     change_reason: str
     confirmed_at: datetime | None
 
@@ -61,6 +62,7 @@ class InitialScheduleCondition(BaseModel):
 
 class ScheduleCreateRequest(BaseModel):
     conditions: list[InitialScheduleCondition] = Field(default_factory=list)
+    planning_mode: str = Field(default="판매 목표 우선", pattern="^(판매 목표 우선|원료 제약 반영)$")
 
 
 class RawMaterialDailyBalanceResponse(BaseModel):

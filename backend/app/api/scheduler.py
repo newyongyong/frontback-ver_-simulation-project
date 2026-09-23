@@ -13,8 +13,12 @@ from sqlalchemy.orm import Session
 
 from app.api.dependencies import get_db
 from app.models.schedule import ProductionScheduleItem, RawMaterialDailyBalance, RawMaterialValidationRun, ScheduleChangeHistory, ScheduleRun, SchedulerSetting, UnscheduledRequirement, WorkCalendarDay
+from app.models.active_source import ActiveDataSource
+from app.models.inventory import InventoryImport, ProductInventoryItem, RawInventoryItem
+from app.models.operations import RawInboundItem
 from app.models.planning_master import Plant, ProductionLine
 from app.models.planning_run import PlanningRun
+from app.models.sales_plan import SalesPlanItem
 from app.schemas.schedule import CalendarDayResponse, CalendarSettingsResponse, CalendarSettingsUpdate, RawMaterialDailyBalanceResponse, RawMaterialValidationResponse, ScheduleCopyRequest, ScheduleCreateRequest, ScheduleItemCreate, ScheduleItemUpdate, ScheduleRunResponse, ScheduleStatusUpdate, ProductionScheduleItemResponse, UnscheduledRequirementResponse
 from app.services.scheduler import create_schedule_run, update_schedule_item, reschedule_shortfalls
 from app.services.raw_material_validator import validate_schedule_raw_materials
@@ -30,13 +34,14 @@ def _response(run: ScheduleRun, items: list[ProductionScheduleItem], shortages: 
         items=[ProductionScheduleItemResponse.model_validate(item) for item in items],
         shortages=[UnscheduledRequirementResponse.model_validate(item) for item in shortages],
         version=run.version, status=run.status, change_reason=run.change_reason, confirmed_at=run.confirmed_at,
+        planning_mode=run.planning_mode,
     )
 
 
 @router.post("/runs/{planning_run_id}", response_model=ScheduleRunResponse, status_code=status.HTTP_201_CREATED)
 def create_run(planning_run_id: int, payload: ScheduleCreateRequest, db: Session = Depends(get_db)) -> ScheduleRunResponse:
     try:
-        run, items, shortages = create_schedule_run(db, planning_run_id, payload.conditions)
+        run, items, shortages = create_schedule_run(db, planning_run_id, payload.conditions, payload.planning_mode)
         return _response(run, items, shortages)
     except ValueError as error:
         db.rollback()
@@ -277,20 +282,66 @@ def export_schedule(schedule_run_id: int, db: Session = Depends(get_db)) -> Stre
         raise HTTPException(status_code=404, detail="생산 스케줄 이력을 찾을 수 없습니다.")
     if run.status != "확정":
         raise HTTPException(status_code=400, detail="Excel 다운로드는 확정된 생산계획 버전에서만 할 수 있습니다.")
+    planning_run = db.get(PlanningRun, run.planning_run_id)
+    if not planning_run:
+        raise HTTPException(status_code=404, detail="연결된 생산계획 기준 정보를 찾을 수 없습니다.")
+
     items = list(db.scalars(select(ProductionScheduleItem).where(ProductionScheduleItem.schedule_run_id == schedule_run_id).order_by(ProductionScheduleItem.planned_date, ProductionScheduleItem.line_code)))
     shortages = list(db.scalars(select(UnscheduledRequirement).where(UnscheduledRequirement.schedule_run_id == schedule_run_id).order_by(UnscheduledRequirement.product_code)))
     latest_validation = db.scalar(select(RawMaterialValidationRun).where(RawMaterialValidationRun.schedule_run_id == schedule_run_id).order_by(RawMaterialValidationRun.created_at.desc()))
     balances = list(db.scalars(select(RawMaterialDailyBalance).where(RawMaterialDailyBalance.validation_run_id == latest_validation.id).order_by(RawMaterialDailyBalance.balance_date, RawMaterialDailyBalance.plant_name, RawMaterialDailyBalance.material_code))) if latest_validation else []
+    def active_import_id(source_type: str, kind: str) -> int | None:
+        active = db.get(ActiveDataSource, source_type)
+        if active:
+            return active.import_id
+        latest = db.scalar(select(InventoryImport).where(InventoryImport.kind == kind).order_by(InventoryImport.imported_at.desc()))
+        return latest.id if latest else None
+
+    sales_rows = list(db.scalars(
+        select(SalesPlanItem)
+        .where(SalesPlanItem.sales_import_id == planning_run.sales_import_id)
+        .order_by(SalesPlanItem.year, SalesPlanItem.month, SalesPlanItem.customer, SalesPlanItem.product_code)
+    ))
+    product_inventory_rows = list(db.scalars(
+        select(ProductInventoryItem)
+        .where(ProductInventoryItem.inventory_import_id == planning_run.product_inventory_import_id)
+        .order_by(ProductInventoryItem.snapshot_date, ProductInventoryItem.product_code, ProductInventoryItem.process_name, ProductInventoryItem.line_name)
+    )) if planning_run.product_inventory_import_id else []
+    raw_inventory_import_id = active_import_id("원료 재고", "raw")
+    raw_inventory_rows = list(db.scalars(
+        select(RawInventoryItem)
+        .where(RawInventoryItem.inventory_import_id == raw_inventory_import_id)
+        .order_by(RawInventoryItem.snapshot_date, RawInventoryItem.plant_name, RawInventoryItem.material_code)
+    )) if raw_inventory_import_id else []
+    raw_inbound_import_id = active_import_id("원료 입고계획", "raw_inbound")
+    raw_inbound_rows = list(db.scalars(
+        select(RawInboundItem)
+        .where(RawInboundItem.inventory_import_id == raw_inbound_import_id)
+        .order_by(RawInboundItem.inbound_date, RawInboundItem.plant_name, RawInboundItem.material_code)
+    )) if raw_inbound_import_id else []
+    plants = {plant.code: plant.name for plant in db.scalars(select(Plant))}
+    lines = list(db.scalars(select(ProductionLine).order_by(ProductionLine.plant_code, ProductionLine.process_code, ProductionLine.name)))
+
     workbook = Workbook()
     summary = workbook.active
     _write_sheet(summary, "요약", ["제품", "필요 생산량(t)", "배정량(t)", "미배정량(t)"], [[row.product_code, row.required_quantity_ton, row.scheduled_quantity_ton, row.unallocated_quantity_ton] for row in shortages])
+    sales_sheet = workbook.create_sheet()
+    _write_sheet(sales_sheet, "판매계획", ["연도", "월", "고객사", "제품", "판매계획(t)"], [[row.year, row.month, row.customer, row.product_code, row.quantity_ton] for row in sales_rows])
     schedule_sheet = workbook.create_sheet()
-    _write_sheet(schedule_sheet, "생산 스케줄", ["일자", "공장", "라인", "제품", "생산계획(t)", "가용능력(t)", "정비휴지(h)", "전환·세척(h)", "고정", "변경 사유"], [[row.planned_date, row.plant_name, row.line_name, row.product_code, row.planned_quantity_ton, row.available_capacity_ton, row.downtime_hours, row.changeover_hours, "Y" if row.is_locked else "", row.adjustment_note] for row in items])
+    _write_sheet(schedule_sheet, "생산계획", ["일자", "공장", "라인", "제품", "생산계획(t)", "가용능력(t)", "정비휴지(h)", "전환·세척(h)", "고정", "변경 사유"], [[row.planned_date, row.plant_name, row.line_name, row.product_code, row.planned_quantity_ton, row.available_capacity_ton, row.downtime_hours, row.changeover_hours, "Y" if row.is_locked else "", row.adjustment_note] for row in items])
+    specification_sheet = workbook.create_sheet()
+    _write_sheet(specification_sheet, "제원치", ["공장", "라인 코드", "라인", "공정", "가동효율(%)"], [[plants.get(row.plant_code, row.plant_code), row.code, row.name, row.process_code, (row.operating_efficiency or 0) * 100] for row in lines])
+    product_inventory_sheet = workbook.create_sheet()
+    _write_sheet(product_inventory_sheet, "제품재고", ["기준일", "제품", "공정", "라인", "재고 상태", "재고량(t)"], [[row.snapshot_date, row.product_code, row.process_name, row.line_name, row.stock_status, row.quantity_ton] for row in product_inventory_rows])
+    raw_inventory_sheet = workbook.create_sheet()
+    _write_sheet(raw_inventory_sheet, "원료재고", ["기준일", "공장", "원료", "재고량(t)"], [[row.snapshot_date, row.plant_name, row.material_code, row.quantity_ton] for row in raw_inventory_rows])
+    raw_inbound_sheet = workbook.create_sheet()
+    _write_sheet(raw_inbound_sheet, "원료 입고계획", ["입고일", "공장", "원료", "입고계획(t)"], [[row.inbound_date, row.plant_name, row.material_code, row.quantity_ton] for row in raw_inbound_rows])
     if balances:
         material_sheet = workbook.create_sheet()
         _write_sheet(material_sheet, "원료 검증", ["일자", "공장", "원료", "기초재고(t)", "입고(t)", "BOM 소요량(t)", "기말재고(t)", "부족량(t)"], [[row.balance_date, row.plant_name, row.material_code, row.opening_quantity_ton, row.inbound_quantity_ton, row.required_quantity_ton, row.ending_quantity_ton, row.shortage_quantity_ton] for row in balances])
     output = BytesIO()
     workbook.save(output)
     output.seek(0)
-    headers = {"Content-Disposition": f'attachment; filename="production_schedule_{schedule_run_id}.xlsx"'}
+    headers = {"Content-Disposition": f'attachment; filename="confirmed_production_plan_{schedule_run_id}.xlsx"'}
     return StreamingResponse(output, media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", headers=headers)

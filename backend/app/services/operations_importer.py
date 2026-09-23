@@ -6,10 +6,12 @@ from io import BytesIO
 from typing import Any
 
 import pandas as pd
+from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.models.inventory import InventoryImport
 from app.models.operations import MaintenanceImport, MaintenanceSchedule, RawInboundItem
+from app.models.active_source import ActiveDataSource
 
 STOCK_SHEET = "현재재고"
 
@@ -50,12 +52,33 @@ def parse_raw_inbound(content: bytes):
     return records
 
 
-def import_raw_inbound(db: Session, file_name: str, content: bytes) -> InventoryImport:
+def _raw_inbound_key(day, plant_name: str, material_code: str) -> tuple[object, str, str]:
+    return (day, "".join(plant_name.split()).upper(), material_code)
+
+
+def import_raw_inbound(db: Session, file_name: str, content: bytes, merge: bool = False) -> InventoryImport:
     records = parse_raw_inbound(content)
-    imported = InventoryImport(kind="raw_inbound", file_name=file_name, item_count=len(records))
+    active = db.get(ActiveDataSource, "원료 입고계획")
+    merged: dict[tuple[object, str, str], tuple[object, str, str, float]] = {}
+    if merge and active:
+        for item in db.scalars(select(RawInboundItem).where(RawInboundItem.inventory_import_id == active.import_id)):
+            merged[_raw_inbound_key(item.inbound_date, item.plant_name, item.material_code)] = (item.inbound_date, item.plant_name, item.material_code, item.quantity_ton)
+    incoming: dict[tuple[object, str, str], tuple[object, str, str, float]] = {}
+    for day, plant, material, quantity in records:
+        key = _raw_inbound_key(day, plant, material)
+        current = incoming.get(key)
+        incoming[key] = (day, plant, material, (current[3] if current else 0.0) + quantity)
+    # 같은 일자·공장·원료는 새 파일의 값을 사용하고, 새 키는 기존 계획에 추가한다.
+    merged.update(incoming)
+    applied_records = list(merged.values()) if merge else list(incoming.values())
+    imported = InventoryImport(kind="raw_inbound", file_name=file_name, item_count=len(applied_records))
     db.add(imported)
     db.flush()
-    db.add_all(RawInboundItem(inventory_import_id=imported.id, inbound_date=day, plant_name=plant, material_code=material, quantity_ton=quantity) for day, plant, material, quantity in records)
+    db.add_all(RawInboundItem(inventory_import_id=imported.id, inbound_date=day, plant_name=plant, material_code=material, quantity_ton=quantity) for day, plant, material, quantity in applied_records)
+    if active:
+        active.import_id = imported.id
+    else:
+        db.add(ActiveDataSource(source_type="원료 입고계획", import_id=imported.id))
     db.commit()
     db.refresh(imported)
     return imported
